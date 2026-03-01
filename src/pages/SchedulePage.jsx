@@ -138,11 +138,11 @@ const SchedulePage = () => {
                                                         </div>
 
                                                         {isMine ? (
-                                                            <button onClick={(e) => { e.stopPropagation(); handleTradeShift(shift); }} className="btn btn-outline" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', border: 'none', backgroundColor: 'white' }}>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleTradeShift(shift); }} className="btn btn-primary" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--primary-600)', color: 'white' }}>
                                                                 Trade Shift
                                                             </button>
                                                         ) : (
-                                                            <button onClick={(e) => { e.stopPropagation(); handlePickUpShift(shift); }} className="btn btn-primary" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--secondary-600)' }}>
+                                                            <button onClick={(e) => { e.stopPropagation(); handlePickUpShift(shift); }} className="btn btn-primary" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--primary-600)', color: 'white' }}>
                                                                 Pick Up
                                                             </button>
                                                         )}
