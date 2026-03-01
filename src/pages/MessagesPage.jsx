@@ -2,24 +2,28 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format, parseISO } from 'date-fns';
-import { ChevronLeft, MessageSquare, Plus, Smile } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus } from 'lucide-react';
 
-// Hardcoded default emojis for reactions to avoid heavy dependencies
-const REACTIONS = ['👍', '❤️', '😂', '🎉', '👏'];
+// Quick-pick emojis shown in the hover picker
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👏', '🙏'];
+
+// A simple inline emoji picker with a few categories
+const EMOJI_LIBRARY = [
+    '😀', '😂', '😍', '🥺', '😎', '🤔', '😅', '🙌',
+    '👍', '👎', '❤️', '🔥', '🎉', '💯', '✅', '🙏',
+    '😢', '😡', '🤦', '🤷', '👀', '💪', '🫶', '🥳',
+];
 
 const MessagesPage = () => {
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
 
-    // View State: 'topics' or 'messages'
     const [view, setView] = useState('topics');
     const [activeTopic, setActiveTopic] = useState(null);
 
-    // Data State
     const [topics, setTopics] = useState([]);
     const [messages, setMessages] = useState([]);
     const [users, setUsers] = useState([]);
 
-    // Input State
     const [newTopicTitle, setNewTopicTitle] = useState('');
     const [newTopicMessage, setNewTopicMessage] = useState('');
     const [isCreatingTopic, setIsCreatingTopic] = useState(false);
@@ -27,55 +31,59 @@ const MessagesPage = () => {
     const [newMessage, setNewMessage] = useState('');
     const [isSending, setIsSending] = useState(false);
 
-    // Mentions state
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
+
+    // Hover emoji picker state: { msgId, showLibrary }
+    const [emojiPickerFor, setEmojiPickerFor] = useState(null);
+    const emojiPickerRef = useRef(null);
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
 
-    // Initial Fetch of Topics and Users
     useEffect(() => {
         fetchTopics();
         fetchUsers();
 
-        // Subscribe to new topics
         const topicsSub = supabase
             .channel('topics_channel')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_topics' }, () => {
-                fetchTopics();
-            })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_topics' }, fetchTopics)
+            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'message_topics' }, fetchTopics)
             .subscribe();
 
         return () => supabase.removeChannel(topicsSub);
     }, []);
 
-    // Fetch Messages when entering a topic
     useEffect(() => {
         if (view === 'messages' && activeTopic) {
             fetchMessages(activeTopic.id);
 
-            // Subscribe to new messages & reactions for this topic
             const msgSub = supabase
                 .channel(`messages_topic_${activeTopic.id}`)
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `topic_id=eq.${activeTopic.id}` }, () => {
-                    fetchMessages(activeTopic.id);
-                })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
-                    fetchMessages(activeTopic.id); // Re-fetch to get new reactions
-                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `topic_id=eq.${activeTopic.id}` }, () => fetchMessages(activeTopic.id))
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => fetchMessages(activeTopic.id))
                 .subscribe();
 
             return () => supabase.removeChannel(msgSub);
         }
     }, [view, activeTopic]);
 
-    // Auto-scroll
     useEffect(() => {
         if (view === 'messages') {
             messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
         }
     }, [messages, view]);
+
+    // Close emoji picker on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+                setEmojiPickerFor(null);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     const fetchUsers = async () => {
         const { data } = await supabase.from('users').select('id, full_name, role');
@@ -93,11 +101,7 @@ const MessagesPage = () => {
     const fetchMessages = async (topicId) => {
         const { data } = await supabase
             .from('messages')
-            .select(`
-                *, 
-                users(full_name, role, avatar_url),
-                message_reactions(id, emoji, user_id)
-            `)
+            .select(`*, users(full_name, role, avatar_url), message_reactions(id, emoji, user_id)`)
             .eq('topic_id', topicId)
             .order('created_at', { ascending: true });
 
@@ -109,7 +113,6 @@ const MessagesPage = () => {
         if (!newTopicTitle.trim() || !newTopicMessage.trim()) return;
 
         setIsCreatingTopic(true);
-        // 1. Create the topic
         const { data: topicData, error: topicError } = await supabase
             .from('message_topics')
             .insert([{ title: newTopicTitle.trim() }])
@@ -117,30 +120,42 @@ const MessagesPage = () => {
             .single();
 
         if (topicError || !topicData) {
-            alert("Error creating topic. Make sure you ran the 'team_comm_updates.sql' script in Supabase! Details: " + topicError?.message);
+            alert('Error creating topic: ' + topicError?.message);
             setIsCreatingTopic(false);
             return;
         }
 
-        // 2. Insert the first message for this topic
-        const { error: msgError } = await supabase
-            .from('messages')
-            .insert([{
-                author_id: user.id,
-                topic_id: topicData.id,
-                content: newTopicMessage.trim()
-            }]);
+        const { error: msgError } = await supabase.from('messages').insert([{
+            author_id: user.id,
+            topic_id: topicData.id,
+            content: newTopicMessage.trim()
+        }]);
 
         if (!msgError) {
             setNewTopicTitle('');
-            setNewTopicMessage(''); // Clear message input
+            setNewTopicMessage('');
             setActiveTopic(topicData);
             setView('messages');
         } else {
-            alert("Topic was created, but failed to insert the first message: " + msgError?.message);
+            alert('Topic created but first message failed: ' + msgError?.message);
         }
-
         setIsCreatingTopic(false);
+    };
+
+    const handleDeleteTopic = async (topicId, e) => {
+        e.stopPropagation();
+        if (!window.confirm('Delete this entire thread and all its messages?')) return;
+        // Cascade deletes messages if FK is set, otherwise delete messages first
+        await supabase.from('messages').delete().eq('topic_id', topicId);
+        await supabase.from('message_topics').delete().eq('id', topicId);
+        fetchTopics();
+    };
+
+    const handleDeleteMessage = async (msgId) => {
+        if (!window.confirm('Delete this message?')) return;
+        await supabase.from('message_reactions').delete().eq('message_id', msgId);
+        await supabase.from('messages').delete().eq('id', msgId);
+        fetchMessages(activeTopic.id);
     };
 
     const handleSendMessage = async (e) => {
@@ -150,79 +165,51 @@ const MessagesPage = () => {
         setIsSending(true);
         const content = newMessage.trim();
 
-        // 1. Insert Message
         const { data: insertedMsg, error } = await supabase
             .from('messages')
-            .insert([{
-                author_id: user.id,
-                topic_id: activeTopic.id,
-                content: content
-            }])
+            .insert([{ author_id: user.id, topic_id: activeTopic.id, content }])
             .select()
             .single();
 
         if (!error && insertedMsg) {
             setNewMessage('');
-
-            // 2. Parse Mentions and Create Notifications
-            // Look for @Name or @Firstname Lastname in the content
             const mentions = users.filter(u => content.toLowerCase().includes(`@${u.full_name?.toLowerCase()}`));
-
             if (mentions.length > 0) {
                 const notifications = mentions.map(m => ({
-                    user_id: m.id,
-                    actor_id: user.id,
-                    type: 'mention',
-                    reference_id: insertedMsg.id,
-                    is_read: false
+                    user_id: m.id, actor_id: user.id, type: 'mention',
+                    reference_id: insertedMsg.id, is_read: false
                 }));
-                // Insert silently
                 supabase.from('notifications').insert(notifications).then();
             }
         } else {
-            alert("Failed to send message.");
+            alert('Failed to send message.');
         }
         setIsSending(false);
     };
 
     const toggleReaction = async (messageId, emoji) => {
-        // Find if user already reacted with this emoji
         const msg = messages.find(m => m.id === messageId);
         if (!msg) return;
 
-        const existingReaction = msg.message_reactions?.find(r => r.emoji === emoji && r.user_id === user.id);
-
-        if (existingReaction) {
-            // Remove it
-            await supabase.from('message_reactions').delete().eq('id', existingReaction.id);
+        const existing = msg.message_reactions?.find(r => r.emoji === emoji && r.user_id === user.id);
+        if (existing) {
+            await supabase.from('message_reactions').delete().eq('id', existing.id);
         } else {
-            // Add it
-            await supabase.from('message_reactions').insert([{
-                message_id: messageId,
-                user_id: user.id,
-                emoji: emoji
-            }]);
+            await supabase.from('message_reactions').insert([{ message_id: messageId, user_id: user.id, emoji }]);
         }
-        // fetchMessages will be called by realtime subscription
+        setEmojiPickerFor(null);
     };
 
     const handleInputMentions = (e) => {
         const val = e.target.value;
         setNewMessage(val);
-
-        // Very basic mention trigger
         const match = val.match(/@(\w*)$/);
-        if (match) {
-            setShowMentions(true);
-            setMentionFilter(match[1].toLowerCase());
-        } else {
-            setShowMentions(false);
-        }
+        if (match) { setShowMentions(true); setMentionFilter(match[1].toLowerCase()); }
+        else setShowMentions(false);
     };
 
     const insertMention = (fullName) => {
-        const newVal = newMessage.replace(/@\w*$/, `@${fullName} `);
-        setNewMessage(newVal);
+        setNewMessage(newMessage.replace(/@\w*$/, `@${fullName} `));
         setShowMentions(false);
         inputRef.current?.focus();
     };
@@ -250,22 +237,15 @@ const MessagesPage = () => {
                         <div style={{ padding: '1rem', borderBottom: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
                             <form onSubmit={handleCreateTopic} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                 <input
-                                    type="text"
-                                    className="form-input"
+                                    type="text" className="form-input"
                                     placeholder="Topic Title (e.g. Schedule Change)"
-                                    value={newTopicTitle}
-                                    onChange={(e) => setNewTopicTitle(e.target.value)}
-                                    maxLength={50}
-                                    required
+                                    value={newTopicTitle} onChange={(e) => setNewTopicTitle(e.target.value)}
+                                    maxLength={50} required
                                 />
                                 <textarea
-                                    className="form-input"
-                                    placeholder="First message..."
-                                    rows="2"
-                                    value={newTopicMessage}
-                                    onChange={(e) => setNewTopicMessage(e.target.value)}
-                                    required
-                                    style={{ resize: 'vertical' }}
+                                    className="form-input" placeholder="First message..." rows="2"
+                                    value={newTopicMessage} onChange={(e) => setNewTopicMessage(e.target.value)}
+                                    required style={{ resize: 'vertical' }}
                                 />
                                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                     <button type="submit" disabled={isCreatingTopic} className="btn btn-primary" style={{ display: 'flex', gap: '0.25rem' }}>
@@ -286,20 +266,29 @@ const MessagesPage = () => {
                                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--neutral-50)'}
                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                     >
-                                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', backgroundColor: 'var(--primary-100)', color: 'var(--primary-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', backgroundColor: 'var(--primary-100)', color: 'var(--primary-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                             <MessageSquare size={20} />
                                         </div>
-                                        <div>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
                                             <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>{topic.title}</h3>
                                             <p className="text-xs text-neutral-muted">Started {format(parseISO(topic.created_at), 'MMM do, yyyy')}</p>
                                         </div>
+                                        {isAdmin && (
+                                            <button
+                                                onClick={(e) => handleDeleteTopic(topic.id, e)}
+                                                className="btn btn-outline"
+                                                style={{ padding: '0.3rem', border: 'none', color: 'var(--danger-500)', flexShrink: 0 }}
+                                                title="Delete thread"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
                                     </div>
                                 ))
                             )}
                         </div>
                     </>
                 )}
-
 
                 {/* --- MESSAGES VIEW --- */}
                 {view === 'messages' && (
@@ -310,7 +299,8 @@ const MessagesPage = () => {
                             ) : (
                                 messages.map((msg) => {
                                     const isMine = msg.author_id === user?.id;
-                                    const isAdmin = msg.users?.role === 'admin';
+                                    const isAdminMsg = msg.users?.role === 'admin';
+                                    const canDelete = isMine || isAdmin;
 
                                     // Aggregate reactions
                                     const reactionCounts = {};
@@ -322,14 +312,24 @@ const MessagesPage = () => {
                                         });
                                     }
 
+                                    const isPickerOpen = emojiPickerFor?.msgId === msg.id;
+
                                     return (
-                                        <div key={msg.id} style={{ display: 'flex', gap: '0.75rem', flexDirection: isMine ? 'row-reverse' : 'row' }}>
+                                        <div
+                                            key={msg.id}
+                                            style={{ display: 'flex', gap: '0.75rem', flexDirection: isMine ? 'row-reverse' : 'row' }}
+                                            onMouseLeave={() => {
+                                                // Don't close if picker is open
+                                                if (!isPickerOpen) setEmojiPickerFor(null);
+                                            }}
+                                        >
+                                            {/* Avatar */}
                                             <div style={{
                                                 width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                                                backgroundColor: isAdmin ? 'var(--primary-600)' : 'var(--secondary-100)',
-                                                color: isAdmin ? 'white' : 'var(--secondary-700)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.875rem',
-                                                overflow: 'hidden'
+                                                backgroundColor: isAdminMsg ? 'var(--primary-600)' : 'var(--secondary-100)',
+                                                color: isAdminMsg ? 'white' : 'var(--secondary-700)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontWeight: 'bold', fontSize: '0.875rem', overflow: 'hidden'
                                             }}>
                                                 {msg.users?.avatar_url ? (
                                                     <img src={msg.users.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -339,42 +339,120 @@ const MessagesPage = () => {
                                             </div>
 
                                             <div style={{ maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+                                                {/* Name + time */}
                                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem', flexDirection: isMine ? 'row-reverse' : 'row' }}>
-                                                    <span style={{ fontWeight: 600, fontSize: '0.75rem', color: isAdmin ? 'var(--primary-700)' : 'var(--neutral-700)' }}>
+                                                    <span style={{ fontWeight: 600, fontSize: '0.75rem', color: isAdminMsg ? 'var(--primary-700)' : 'var(--neutral-700)' }}>
                                                         {isMine ? 'You' : (msg.users?.full_name || 'Caregiver')}
-                                                        {isAdmin && !isMine && ' (Admin)'}
+                                                        {isAdminMsg && !isMine && ' (Admin)'}
                                                     </span>
                                                     <span className="text-xs text-neutral-muted">
                                                         {format(parseISO(msg.created_at), 'M/d, h:mm a')}
                                                     </span>
                                                 </div>
 
-                                                <div className="text-sm" style={{
-                                                    backgroundColor: isMine ? 'var(--primary-600)' : 'var(--neutral-100)',
-                                                    color: isMine ? 'white' : 'inherit',
-                                                    padding: '0.75rem 1rem',
-                                                    borderRadius: isMine ? '16px 16px 0 16px' : '16px 16px 16px 0',
-                                                    wordBreak: 'break-word',
-                                                    position: 'relative',
-                                                    lineHeight: '1.4'
-                                                }}>
-                                                    {msg.content}
+                                                {/* Bubble + hover actions */}
+                                                <div style={{ position: 'relative' }}>
+                                                    <div
+                                                        className="text-sm"
+                                                        style={{
+                                                            backgroundColor: isMine ? 'var(--primary-600)' : 'var(--neutral-100)',
+                                                            color: isMine ? 'white' : 'inherit',
+                                                            padding: '0.75rem 1rem',
+                                                            borderRadius: isMine ? '16px 16px 0 16px' : '16px 16px 16px 0',
+                                                            wordBreak: 'break-word',
+                                                            lineHeight: '1.4'
+                                                        }}
+                                                    >
+                                                        {msg.content}
+                                                    </div>
 
-                                                    {/* Quick Emoji Picker hover menu (mobile uses tap context usually, simplified here) */}
-                                                    <div className="action-menu" style={{
-                                                        position: 'absolute', bottom: '-12px', right: isMine ? 'auto' : '-10px', left: isMine ? '-10px' : 'auto',
-                                                        display: 'flex', gap: '0.25rem', backgroundColor: 'white', borderRadius: '12px', padding: '0.1rem 0.25rem',
-                                                        boxShadow: 'var(--shadow-sm)', opacity: 0.8
-                                                    }}>
-                                                        {REACTIONS.map(emoji => (
-                                                            <span key={emoji} onClick={() => toggleReaction(msg.id, emoji)} style={{ cursor: 'pointer', fontSize: '0.875rem' }}>
-                                                                {emoji}
-                                                            </span>
-                                                        ))}
+                                                    {/* Hover action bar — shown on group hover via inline state */}
+                                                    <div
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: '50%', transform: 'translateY(-50%)',
+                                                            [isMine ? 'right' : 'left']: 'calc(100% + 6px)',
+                                                            display: 'flex', gap: '0.25rem', alignItems: 'center',
+                                                            opacity: 0,
+                                                        }}
+                                                        className="msg-actions"
+                                                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                                        onMouseLeave={(e) => { if (!isPickerOpen) e.currentTarget.style.opacity = '0'; }}
+                                                    >
+                                                        {/* Emoji reaction button */}
+                                                        <div style={{ position: 'relative' }}>
+                                                            <button
+                                                                onClick={() => setEmojiPickerFor(isPickerOpen ? null : { msgId: msg.id, showLibrary: false })}
+                                                                title="React"
+                                                                style={{ background: 'var(--neutral-100)', border: '1px solid var(--neutral-200)', borderRadius: '50%', width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                                            >
+                                                                <SmilePlus size={14} color="var(--neutral-600)" />
+                                                            </button>
+
+                                                            {/* Emoji picker popup */}
+                                                            {isPickerOpen && (
+                                                                <div
+                                                                    ref={emojiPickerRef}
+                                                                    style={{
+                                                                        position: 'absolute',
+                                                                        bottom: 'calc(100% + 6px)',
+                                                                        [isMine ? 'right' : 'left']: 0,
+                                                                        backgroundColor: 'white',
+                                                                        borderRadius: 'var(--radius-lg)',
+                                                                        boxShadow: 'var(--shadow-lg)',
+                                                                        padding: '0.5rem',
+                                                                        zIndex: 200,
+                                                                        minWidth: '200px',
+                                                                        border: '1px solid var(--neutral-200)'
+                                                                    }}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    {/* Quick picks */}
+                                                                    <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', borderBottom: '1px solid var(--neutral-100)', paddingBottom: '0.5rem' }}>
+                                                                        {QUICK_REACTIONS.map(emoji => (
+                                                                            <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                                                                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', padding: '0.1rem', borderRadius: 4, lineHeight: 1 }}
+                                                                                title={emoji}
+                                                                            >{emoji}</button>
+                                                                        ))}
+                                                                    </div>
+
+                                                                    {/* Toggle full library */}
+                                                                    <button
+                                                                        onClick={() => setEmojiPickerFor(prev => ({ ...prev, showLibrary: !prev.showLibrary }))}
+                                                                        style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--primary-600)', cursor: 'pointer', display: 'block', marginBottom: emojiPickerFor?.showLibrary ? '0.5rem' : 0, padding: '0.1rem 0' }}
+                                                                    >
+                                                                        {emojiPickerFor?.showLibrary ? '▲ Hide library' : '▼ More emoji'}
+                                                                    </button>
+
+                                                                    {emojiPickerFor?.showLibrary && (
+                                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '0.1rem', marginTop: '0.25rem' }}>
+                                                                            {EMOJI_LIBRARY.map(emoji => (
+                                                                                <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                                                                    style={{ background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer', padding: '0.15rem', borderRadius: 4, lineHeight: 1 }}
+                                                                                    title={emoji}
+                                                                                >{emoji}</button>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Delete own/admin button */}
+                                                        {canDelete && (
+                                                            <button
+                                                                onClick={() => handleDeleteMessage(msg.id)}
+                                                                title="Delete message"
+                                                                style={{ background: 'var(--neutral-100)', border: '1px solid var(--neutral-200)', borderRadius: '50%', width: 28, height: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, color: 'var(--danger-500)' }}
+                                                            >
+                                                                <Trash2 size={13} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
 
-                                                {/* Display Reactions */}
+                                                {/* Existing reactions display */}
                                                 {Object.keys(reactionCounts).length > 0 && (
                                                     <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.5rem', flexWrap: 'wrap', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
                                                         {Object.keys(reactionCounts).map(emoji => (
@@ -406,11 +484,8 @@ const MessagesPage = () => {
                             <div style={{ backgroundColor: 'white', borderTop: '1px solid var(--neutral-200)', borderBottom: '1px solid var(--neutral-200)', maxHeight: 150, overflowY: 'auto' }}>
                                 <div className="text-xs text-neutral-muted" style={{ padding: '0.5rem 1rem', backgroundColor: 'var(--neutral-50)' }}>Mention a team member</div>
                                 {users.filter(u => u.full_name?.toLowerCase().includes(mentionFilter)).map(u => (
-                                    <div
-                                        key={u.id}
-                                        onClick={() => insertMention(u.full_name)}
-                                        style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--neutral-100)' }}
-                                    >
+                                    <div key={u.id} onClick={() => insertMention(u.full_name)}
+                                        style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--neutral-100)' }}>
                                         <span style={{ fontWeight: 600 }}>{u.full_name}</span> <span className="text-xs text-neutral-muted">({u.role})</span>
                                     </div>
                                 ))}
@@ -421,15 +496,11 @@ const MessagesPage = () => {
                         <div style={{ padding: '0.75rem', borderTop: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
                             <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem' }}>
                                 <input
-                                    ref={inputRef}
-                                    type="text"
-                                    className="form-input"
+                                    ref={inputRef} type="text" className="form-input"
                                     placeholder="Type a message... (Use @Name to tag)"
                                     style={{ flex: 1, backgroundColor: 'white' }}
-                                    value={newMessage}
-                                    onChange={handleInputMentions}
-                                    disabled={isSending}
-                                    autoComplete="off"
+                                    value={newMessage} onChange={handleInputMentions}
+                                    disabled={isSending} autoComplete="off"
                                 />
                                 <button type="submit" disabled={isSending || !newMessage.trim()} className="btn btn-primary">
                                     {isSending ? '...' : 'Send'}
@@ -439,6 +510,12 @@ const MessagesPage = () => {
                     </>
                 )}
             </div>
+
+            {/* CSS for hover reveal of action bar */}
+            <style>{`
+                .msg-actions { opacity: 0; transition: opacity 0.15s; }
+                div:hover > div > div > .msg-actions { opacity: 1; }
+            `}</style>
         </div>
     );
 };
