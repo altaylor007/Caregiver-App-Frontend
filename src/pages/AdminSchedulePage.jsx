@@ -716,7 +716,7 @@ const AdminSchedulePage = () => {
             </>
         )
     }
-        </div >
+        </div>
     );
 };
 
