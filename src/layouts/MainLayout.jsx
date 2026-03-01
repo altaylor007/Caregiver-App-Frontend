@@ -63,7 +63,9 @@ const MainLayout = () => {
             {/* Top Header */}
             <header className="app-header">
                 <div>
-                    <h1 className="text-primary" style={{ margin: 0 }}>ACT</h1>
+                    <NavLink to="/" style={{ textDecoration: 'none' }}>
+                        <h1 className="text-primary" style={{ margin: 0, cursor: 'pointer' }}>ACT</h1>
+                    </NavLink>
                 </div>
                 <div style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <button
