@@ -163,19 +163,18 @@ const AdminSchedulePage = () => {
         } else {
             // Create new shift(s)
             if (applyToWeek) {
-                // Generate Mon-Sun for the week of the selected date
+                // Generate Sun-Sat for the week of the selected date
                 const baseDate = parseISO(date);
-                // get day 1 (Monday) as start of week. 0 is Sunday.
+                // getDay(): 0=Sun, 1=Mon, ... 6=Sat
+                // Find the Sunday of this week
                 const dayOfWeek = baseDate.getDay();
-                const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-
-                const monday = new Date(baseDate);
-                monday.setDate(baseDate.getDate() + diffToMonday);
+                const sunday = new Date(baseDate);
+                sunday.setDate(baseDate.getDate() - dayOfWeek);
 
                 const shiftsToCreate = [];
                 for (let i = 0; i < 7; i++) {
-                    const shiftDate = new Date(monday);
-                    shiftDate.setDate(monday.getDate() + i);
+                    const shiftDate = new Date(sunday);
+                    shiftDate.setDate(sunday.getDate() + i);
                     const shiftDateStr = format(shiftDate, 'yyyy-MM-dd');
 
                     shiftsToCreate.push({
@@ -468,7 +467,7 @@ const AdminSchedulePage = () => {
                                     style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary-600)' }}
                                 />
                                 <label htmlFor="applyWeek" className="form-label" style={{ margin: 0, marginLeft: '0.5rem', cursor: 'pointer' }}>
-                                    Create this shift for Monday-Sunday of the selected week (7 days)
+                                    Create this shift for Sunday–Saturday of the selected week (7 days)
                                 </label>
                             </div>
                         )}
@@ -654,7 +653,17 @@ const AdminSchedulePage = () => {
                                     const isTodayDay = isSameDay(day, new Date());
 
                                     return (
-                                        <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`} style={{ gridColumn: 'auto' }}>
+                                        <div
+                                            key={dayStr}
+                                            className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`}
+                                            style={{ gridColumn: 'auto', cursor: dayShifts.length === 0 ? 'pointer' : 'auto' }}
+                                            onClick={() => {
+                                                if (dayShifts.length === 0) {
+                                                    openNewForm();
+                                                    setDate(dayStr);
+                                                }
+                                            }}
+                                        >
                                             <div className="calendar-date-label">
                                                 <span>{format(day, 'd')}</span>
                                                 {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
@@ -707,7 +716,7 @@ const AdminSchedulePage = () => {
             </>
         )
     }
-        </div>
+        </div >
     );
 };
 
