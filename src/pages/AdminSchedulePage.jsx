@@ -5,6 +5,17 @@ import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSam
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
 const AdminSchedulePage = () => {
+    // Generate time options in 15-minute increments (00:00 - 23:45)
+    const timeOptions = [];
+    for (let h = 0; h < 24; h++) {
+        for (let m of [0, 15, 30, 45]) {
+            const hh = String(h).padStart(2, '0');
+            const mm = String(m).padStart(2, '0');
+            const val = `${hh}:${mm}`;
+            const label = new Date(`1970-01-01T${val}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            timeOptions.push({ val, label });
+        }
+    }
     const [shifts, setShifts] = useState([]);
     const [caregivers, setCaregivers] = useState([]);
     const [availabilityResponses, setAvailabilityResponses] = useState([]);
@@ -395,11 +406,15 @@ const AdminSchedulePage = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div className="form-group">
                                 <label className="form-label">Start Time</label>
-                                <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} step="900" required />
+                                <select className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} required>
+                                    {timeOptions.map(t => <option key={t.val} value={t.val}>{t.label}</option>)}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">End Time</label>
-                                <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} step="900" required />
+                                <select className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} required>
+                                    {timeOptions.map(t => <option key={t.val} value={t.val}>{t.label}</option>)}
+                                </select>
                             </div>
                         </div>
 
@@ -690,7 +705,8 @@ const AdminSchedulePage = () => {
                     </div>
                 </div>
             </>
-            )}
+        )
+    }
         </div>
     );
 };
