@@ -144,6 +144,18 @@ const AdminSchedulePage = () => {
         const finalCustomName = assignedTo === 'custom' && customAssignedName.trim() !== '' ? customAssignedName.trim() : null;
         const isOpen = !finalAssignedTo && !finalCustomName;
 
+        // Warn if assigning someone who marked themselves unavailable
+        if (finalAssignedTo) {
+            const availRecord = availabilityResponses.find(r => r.user_id === finalAssignedTo && r.date === date);
+            if (availRecord?.status === 'unavailable') {
+                const caregiverName = caregivers.find(c => c.id === finalAssignedTo)?.full_name || 'This caregiver';
+                const confirmed = window.confirm(
+                    `⚠️ Availability conflict\n\n${caregiverName} has marked themselves UNAVAILABLE on ${date}.\n\nDo you want to save this shift anyway?`
+                );
+                if (!confirmed) return;
+            }
+        }
+
         if (currentId) {
             // Update single existing shift
             const startIso = new Date(`${date}T${startTime}:00`).toISOString();
@@ -427,14 +439,15 @@ const AdminSchedulePage = () => {
                                             )}
                                             {caregivers.map(cg => {
                                                 const availRecord = availabilityResponses.find(r => r.user_id === cg.id && r.date === date);
-                                                let availLabel = '';
-                                                if (availRecord?.status === 'available') availLabel = '✓ (All Day)';
-                                                else if (availRecord?.status === 'available_morning') availLabel = '✓ (Morning)';
-                                                else if (availRecord?.status === 'available_evening') availLabel = '✓ (Evening)';
+                                                let dot = '';
+                                                if (availRecord?.status === 'available') dot = '🟢';
+                                                else if (availRecord?.status === 'available_morning') dot = '🟡 AM';
+                                                else if (availRecord?.status === 'available_evening') dot = '🟡 PM';
+                                                else if (availRecord?.status === 'unavailable') dot = '🔴';
 
                                                 return (
                                                     <option key={cg.id} value={cg.id}>
-                                                        {cg.full_name || 'Unnamed Caregiver'} {availLabel}
+                                                        {dot ? `${dot} ` : ''}{cg.full_name || 'Unnamed Caregiver'}
                                                     </option>
                                                 );
                                             })}
