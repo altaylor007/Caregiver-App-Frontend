@@ -47,6 +47,11 @@ const AdminSchedulePage = () => {
     const [reqMessage, setReqMessage] = useState('Please submit your availability for next week.');
     const [requesting, setRequesting] = useState(false);
 
+    // Cell-click dialog state (availability matrix)
+    const [cellDialog, setCellDialog] = useState(null); // { caregiver, dayStr, availStatus, shifts }
+    const [cellAssignShiftId, setCellAssignShiftId] = useState('');
+    const [cellAssigning, setCellAssigning] = useState(false);
+
     const fetchData = async () => {
         setLoading(true);
 
@@ -543,13 +548,16 @@ const AdminSchedulePage = () => {
                     /* ========== AVAILABILITY MATRIX VIEW ========== */
                     <div style={{ overflowX: 'auto' }}>
                         {/* Legend */}
-                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.8rem', marginBottom: '1rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--success-500)', display: 'inline-block' }}></span> All Day</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: '#60a5fa', display: 'inline-block' }}></span> Morning Only</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: '#a78bfa', display: 'inline-block' }}></span> Evening Only</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--danger-300)', display: 'inline-block' }}></span> Unavailable</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--neutral-200)', display: 'inline-block' }}></span> No Response</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--warning-300)', border: '2px solid var(--warning-600)', display: 'inline-block' }}></span> Open Shift</div>
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.8rem', marginBottom: '1rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--success-200)', border: '1.5px solid var(--success-600)', display: 'inline-block' }}></span> All Day</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: '#bfdbfe', border: '1.5px solid #3b82f6', display: 'inline-block' }}></span> Morning Only</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: '#ddd6fe', border: '1.5px solid #7c3aed', display: 'inline-block' }}></span> Evening Only</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--danger-100)', border: '1.5px solid var(--danger-500)', display: 'inline-block' }}></span> Unavailable</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--neutral-100)', border: '1.5px solid var(--neutral-300)', display: 'inline-block' }}></span> No Response</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <span style={{ width: 18, height: 18, borderRadius: 3, backgroundColor: 'var(--success-200)', border: '3px solid var(--warning-500)', display: 'inline-block' }}></span>
+                                Open Shift Available (click to assign)
+                            </div>
                         </div>
                         {loading ? (
                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading availability...</div>
@@ -597,8 +605,14 @@ const AdminSchedulePage = () => {
                                                 return (
                                                     <td key={dayStr} style={{ padding: '0.15rem 0.1rem', textAlign: 'center' }}>
                                                         <div
-                                                            title={`${cg.full_name}: ${title}${hasOpenShift ? ` | ${openShiftsOnDay.length} open shift(s)` : ''}`}
-                                                            onClick={() => canAssign && hasOpenShift ? quickAssignCaregiver(cg.id, dayStr) : undefined}
+                                                            title={`${cg.full_name}: ${title}${hasOpenShift ? ` | ${openShiftsOnDay.length} open shift(s) — click to assign` : ''}`}
+                                                            onClick={() => {
+                                                                if (avail && avail.status !== 'unavailable') {
+                                                                    setCellDialog({ caregiver: cg, dayStr, availStatus: avail?.status || null, dayShifts: shifts.filter(s => s.date === dayStr) });
+                                                                    setCellAssignShiftId(openShiftsOnDay[0]?.id || '');
+                                                                    setCellAssigning(false);
+                                                                }
+                                                            }}
                                                             style={{
                                                                 width: '100%',
                                                                 minWidth: '24px',
@@ -610,12 +624,12 @@ const AdminSchedulePage = () => {
                                                                 justifyContent: 'center',
                                                                 fontSize: '0.65rem',
                                                                 fontWeight: 700,
-                                                                cursor: canAssign && hasOpenShift ? 'pointer' : 'default',
+                                                                cursor: canAssign ? 'pointer' : 'default',
                                                                 border: hasOpenShift ? '2px solid var(--warning-500)' : (isToday ? '2px solid var(--primary-400)' : '1px solid transparent'),
                                                                 transition: 'transform 0.1s',
                                                                 color: avail?.status === 'unavailable' ? 'var(--danger-700)' : 'var(--neutral-700)',
                                                             }}
-                                                            onMouseEnter={e => { if (canAssign && hasOpenShift) e.currentTarget.style.transform = 'scale(1.15)'; }}
+                                                            onMouseEnter={e => { if (canAssign) e.currentTarget.style.transform = 'scale(1.15)'; }}
                                                             onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
                                                         >
                                                             {emoji}
@@ -629,8 +643,95 @@ const AdminSchedulePage = () => {
                             </table>
                         )}
                         <p style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.75rem' }}>
-                            💡 Cells with an orange border have open shifts. Click on an available caregiver cell with an open shift to quickly assign them.
+                            💡 Click any available caregiver cell to view shifts for that day and assign.
                         </p>
+
+                        {/* Cell Click Dialog */}
+                        {cellDialog && (
+                            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                                <div className="card" style={{ width: '100%', maxWidth: '520px', margin: 'auto' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                        <h3 style={{ margin: 0 }}>{format(new Date(cellDialog.dayStr + 'T12:00:00'), 'EEEE, MMMM d')}</h3>
+                                        <button onClick={() => setCellDialog(null)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--neutral-500)' }}>&times;</button>
+                                    </div>
+
+                                    <div style={{ marginBottom: '1rem', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--primary-50)', fontSize: '0.875rem' }}>
+                                        <strong>{cellDialog.caregiver.full_name}</strong> is&nbsp;
+                                        {cellDialog.availStatus === 'available' ? '✅ available all day' :
+                                            cellDialog.availStatus === 'available_morning' ? '🌅 available in the morning' :
+                                                cellDialog.availStatus === 'available_evening' ? '🌆 available in the evening' : '❓ status unknown'}
+                                    </div>
+
+                                    <h4 style={{ marginBottom: '0.5rem', color: 'var(--neutral-700)' }}>Shifts on this day</h4>
+                                    {cellDialog.dayShifts.length === 0 ? (
+                                        <p style={{ color: 'var(--neutral-500)', fontSize: '0.875rem' }}>No shifts created for this day yet.</p>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+                                            {cellDialog.dayShifts.map(s => {
+                                                const isAssigned = !!s.assigned_to || !!s.custom_assigned_name;
+                                                return (
+                                                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: isAssigned ? 'var(--success-50)' : 'var(--warning-50)', border: `1px solid ${isAssigned ? 'var(--success-200)' : 'var(--warning-300)'}` }}>
+                                                        <div>
+                                                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.title}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
+                                                                {format(new Date(`1970-01-01T${s.start_time.substring(11, 16)}`), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)}`), 'h:mm a')}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)' }}>
+                                                            {isAssigned ? (s.users?.full_name || s.custom_assigned_name || 'Assigned') : 'Open'}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {cellDialog.dayShifts.some(s => !s.assigned_to && !s.custom_assigned_name) && (
+                                        <div style={{ borderTop: '1px solid var(--neutral-200)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+                                            <h4 style={{ marginBottom: '0.5rem', color: 'var(--neutral-700)' }}>Assign {cellDialog.caregiver.full_name} to a shift</h4>
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <select
+                                                    className="form-input"
+                                                    style={{ flex: 1 }}
+                                                    value={cellAssignShiftId}
+                                                    onChange={e => setCellAssignShiftId(e.target.value)}
+                                                >
+                                                    <option value="">-- Select a shift --</option>
+                                                    {cellDialog.dayShifts.filter(s => !s.assigned_to && !s.custom_assigned_name).map(s => (
+                                                        <option key={s.id} value={s.id}>
+                                                            {s.title} ({format(new Date(`1970-01-01T${s.start_time.substring(11, 16)}`), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)}`), 'h:mm a')})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    className="btn btn-primary"
+                                                    disabled={!cellAssignShiftId || cellAssigning}
+                                                    onClick={async () => {
+                                                        if (!cellAssignShiftId) return;
+                                                        setCellAssigning(true);
+                                                        const { error } = await supabase.from('shifts').update({ assigned_to: cellDialog.caregiver.id }).eq('id', cellAssignShiftId);
+                                                        setCellAssigning(false);
+                                                        if (!error) {
+                                                            setCellDialog(null);
+                                                            fetchData();
+                                                        } else {
+                                                            alert('Error assigning shift: ' + error.message);
+                                                        }
+                                                    }}
+                                                >
+                                                    {cellAssigning ? 'Assigning...' : 'Assign'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                                        <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setCellDialog(null)}>Close</button>
+                                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setCellDialog(null); openNewForm(); setDate(cellDialog.dayStr); setAssignedTo(cellDialog.caregiver.id); }}>Create New Shift for This Day</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     /* ========== CALENDAR VIEW ========== */
