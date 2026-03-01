@@ -347,14 +347,18 @@ const AdminDocumentsPage = () => {
                                                         fontSize: '0.75rem',
                                                         backgroundColor: 'var(--success-50)',
                                                         color: 'var(--success-700)',
-                                                        padding: '0.25rem 0.5rem',
-                                                        borderRadius: '9999px',
+                                                        padding: '0.35rem 0.65rem',
+                                                        borderRadius: 'var(--radius-md)',
                                                         display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '0.25rem',
+                                                        flexDirection: 'column',
+                                                        gap: '0.1rem',
                                                         border: '1px solid var(--success-200)'
                                                     }}>
-                                                        {ack.userName}
+                                                        <span style={{ fontWeight: 600 }}>{ack.userName}</span>
+                                                        <span style={{ fontSize: '0.65rem', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                                            <CheckCircle size={10} />
+                                                            {ack.date ? new Date(ack.date).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Date unknown'}
+                                                        </span>
                                                     </div>
                                                 ))}
                                             </div>
