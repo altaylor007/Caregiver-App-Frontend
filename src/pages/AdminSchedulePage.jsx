@@ -1,0 +1,499 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { Plus, Edit2, Trash2, Send, Check } from 'lucide-react';
+import { format, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameDay } from 'date-fns';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+
+const AdminSchedulePage = () => {
+    const [shifts, setShifts] = useState([]);
+    const [caregivers, setCaregivers] = useState([]);
+    const [availabilityResponses, setAvailabilityResponses] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
+
+    // Form State
+    const [isFormOpen, setIsFormOpen] = useState(false);
+    const [currentId, setCurrentId] = useState(null);
+    const [applyToWeek, setApplyToWeek] = useState(false);
+
+    const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [title, setTitle] = useState('');
+    const [startTime, setStartTime] = useState('09:00');
+    const [endTime, setEndTime] = useState('17:00');
+    const [assignedTo, setAssignedTo] = useState(''); // UUID, 'custom', or empty string for Open Shift
+    const [customAssignedName, setCustomAssignedName] = useState(''); // Holds the text for one-off caregiver
+
+    const [formError, setFormError] = useState('');
+
+    // Request Availability State
+    const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+    const [reqStartDate, setReqStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [reqEndDate, setReqEndDate] = useState(format(addWeeks(new Date(), 1), 'yyyy-MM-dd'));
+    const [reqMessage, setReqMessage] = useState('Please submit your availability for next week.');
+    const [requesting, setRequesting] = useState(false);
+
+    const fetchData = async () => {
+        setLoading(true);
+
+        const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
+        const startDateStr = format(currentWeekStart, 'yyyy-MM-dd');
+        const endDateStr = format(weekEnd, 'yyyy-MM-dd');
+
+        // Fetch shifts for this week
+        const shiftsData = await supabase
+            .from('shifts')
+            .select('*, users(full_name)')
+            .gte('date', startDateStr)
+            .lte('date', endDateStr)
+            .order('start_time', { ascending: true });
+
+        // Fetch active caregivers for assignment dropdown
+        const caregiversData = await supabase
+            .from('users')
+            .select('id, full_name')
+            .eq('role', 'caregiver')
+            .eq('status', 'active');
+
+        // Fetch availability responses for this week
+        const availabilityData = await supabase
+            .from('availability_responses')
+            .select('user_id, date, status')
+            .gte('date', startDateStr)
+            .lte('date', endDateStr)
+            .neq('status', 'unavailable');
+
+        if (shiftsData.data) setShifts(shiftsData.data);
+        if (caregiversData.data) setCaregivers(caregiversData.data);
+        if (availabilityData.data) setAvailabilityResponses(availabilityData.data);
+
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, [currentWeekStart]);
+
+    const openNewForm = () => {
+        setIsFormOpen(true);
+        setCurrentId(null);
+        setTitle('');
+        setDate(format(new Date(), 'yyyy-MM-dd'));
+        setStartTime('09:30');
+        setEndTime('15:30');
+        setAssignedTo('');
+        setApplyToWeek(false);
+    };
+
+    const openEditForm = (shift) => {
+        setIsFormOpen(true);
+        setCurrentId(shift.id);
+        setTitle(shift.title);
+        setDate(shift.date);
+        // Extract HH:mm from ISO
+        setStartTime(format(parseISO(shift.start_time), 'HH:mm'));
+        setEndTime(format(parseISO(shift.end_time), 'HH:mm'));
+
+        if (shift.custom_assigned_name) {
+            setAssignedTo('custom');
+            setCustomAssignedName(shift.custom_assigned_name);
+        } else {
+            setAssignedTo(shift.assigned_to || '');
+            setCustomAssignedName('');
+        }
+
+        setApplyToWeek(false);
+    };
+
+    const closeForm = () => {
+        setIsFormOpen(false);
+        setFormError('');
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setFormError('');
+
+        let error;
+
+        const finalAssignedTo = assignedTo === 'custom' ? null : (assignedTo || null);
+        const finalCustomName = assignedTo === 'custom' && customAssignedName.trim() !== '' ? customAssignedName.trim() : null;
+        const isOpen = !finalAssignedTo && !finalCustomName;
+
+        if (currentId) {
+            // Update single existing shift
+            const startIso = new Date(`${date}T${startTime}:00`).toISOString();
+            const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+            const payload = {
+                title,
+                date,
+                start_time: startIso,
+                end_time: endIso,
+                assigned_to: finalAssignedTo,
+                custom_assigned_name: finalCustomName,
+                is_open: isOpen
+            };
+
+            const res = await supabase.from('shifts').update(payload).eq('id', currentId);
+            error = res.error;
+        } else {
+            // Create new shift(s)
+            if (applyToWeek) {
+                // Generate Mon-Sun for the week of the selected date
+                const baseDate = parseISO(date);
+                // get day 1 (Monday) as start of week. 0 is Sunday.
+                const dayOfWeek = baseDate.getDay();
+                const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+                const monday = new Date(baseDate);
+                monday.setDate(baseDate.getDate() + diffToMonday);
+
+                const shiftsToCreate = [];
+                for (let i = 0; i < 7; i++) {
+                    const shiftDate = new Date(monday);
+                    shiftDate.setDate(monday.getDate() + i);
+                    const shiftDateStr = format(shiftDate, 'yyyy-MM-dd');
+
+                    shiftsToCreate.push({
+                        title,
+                        date: shiftDateStr,
+                        start_time: new Date(`${shiftDateStr}T${startTime}:00`).toISOString(),
+                        end_time: new Date(`${shiftDateStr}T${endTime}:00`).toISOString(),
+                        assigned_to: finalAssignedTo,
+                        custom_assigned_name: finalCustomName,
+                        is_open: isOpen
+                    });
+                }
+                const res = await supabase.from('shifts').insert(shiftsToCreate);
+                error = res.error;
+            } else {
+                const startIso = new Date(`${date}T${startTime}:00`).toISOString();
+                const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+                const payload = {
+                    title,
+                    date,
+                    start_time: startIso,
+                    end_time: endIso,
+                    assigned_to: finalAssignedTo,
+                    custom_assigned_name: finalCustomName,
+                    is_open: isOpen
+                };
+
+                const res = await supabase.from('shifts').insert([payload]);
+                error = res.error;
+            }
+        }
+
+        if (error) {
+            setFormError(error.message);
+        } else {
+            closeForm();
+            fetchData();
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this shift?")) return;
+        const { error } = await supabase.from('shifts').delete().eq('id', id);
+        if (!error) fetchData();
+    };
+
+    const handleSendRequest = async (e) => {
+        e.preventDefault();
+        setRequesting(true);
+        const { error } = await supabase.from('availability_requests').insert([{
+            start_date: reqStartDate,
+            end_date: reqEndDate,
+            message: reqMessage,
+            created_by: (await supabase.auth.getUser()).data.user.id
+        }]);
+
+        if (error) {
+            alert("Error sending request: " + error.message);
+        } else {
+            alert("Availability request sent to all caregivers!");
+            setIsRequestModalOpen(false);
+        }
+        setRequesting(false);
+    };
+
+    const nextWeek = () => setCurrentWeekStart(addWeeks(currentWeekStart, 1));
+    const prevWeek = () => setCurrentWeekStart(subWeeks(currentWeekStart, 1));
+    const goToToday = () => setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+
+    // Generate 7 days for the current week grid
+    const weekDays = Array.from({ length: 7 }).map((_, i) => {
+        const d = new Date(currentWeekStart);
+        d.setDate(d.getDate() + i);
+        return d;
+    });
+
+    return (
+        <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <h2>Master Schedule</h2>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {!isFormOpen && (
+                        <>
+                            <button onClick={prevWeek} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                                <ChevronLeft size={20} />
+                            </button>
+                            <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
+                                Today
+                            </button>
+                            <button onClick={nextWeek} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                                <ChevronRight size={20} />
+                            </button>
+                            <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
+                                <Plus size={16} /> New Shift
+                            </button>
+                            <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-secondary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
+                                <CalendarIcon size={16} /> Request Availability
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {isFormOpen && (
+                <div className="card" style={{ border: '2px solid var(--primary-500)', marginBottom: '1.5rem' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>{currentId ? 'Edit Shift' : 'Create Shift'}</h3>
+
+                    {formError && (
+                        <div style={{ backgroundColor: 'var(--danger-50)', color: 'var(--danger-600)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                            {formError}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSubmit}>
+                        <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button
+                                type="button"
+                                className="btn btn-outline text-xs"
+                                onClick={() => {
+                                    setTitle('Morning Shift');
+                                    setStartTime('09:30');
+                                    setEndTime('15:30');
+                                }}
+                            >
+                                Template: Morning (9:30am-3:30pm)
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-outline text-xs"
+                                onClick={() => {
+                                    setTitle('Evening Shift');
+                                    setStartTime('17:30');
+                                    setEndTime('21:30');
+                                }}
+                            >
+                                Template: Evening (5:30pm-9:30pm)
+                            </button>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Shift Title / Type</label>
+                            <input type="text" className="form-input" placeholder="e.g. Morning Shift" value={title} onChange={e => setTitle(e.target.value)} required />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Date</label>
+                            <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} required />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div className="form-group">
+                                <label className="form-label">Start Time</label>
+                                <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} required />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">End Time</label>
+                                <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} required />
+                            </div>
+                        </div>
+
+                        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: assignedTo === 'custom' ? '1fr 1fr' : '1fr', gap: '1rem', alignItems: 'end' }}>
+                            <div>
+                                <label className="form-label">Assign To</label>
+                                <select className="form-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+                                    <option value="">-- Open Shift (Unassigned) --</option>
+                                    <option value="custom">-- 📍 Other (Manual Entry) --</option>
+                                    {caregivers.map(cg => {
+                                        const availRecord = availabilityResponses.find(r => r.user_id === cg.id && r.date === date);
+                                        let availLabel = '';
+                                        if (availRecord?.status === 'available') availLabel = '✓ (All Day)';
+                                        else if (availRecord?.status === 'available_morning') availLabel = '✓ (Morning)';
+                                        else if (availRecord?.status === 'available_evening') availLabel = '✓ (Evening)';
+
+                                        return (
+                                            <option key={cg.id} value={cg.id}>
+                                                {cg.full_name || 'Unnamed Caregiver'} {availLabel}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            </div>
+
+                            {assignedTo === 'custom' && (
+                                <div>
+                                    <label className="form-label">Caregiver Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Enter name (e.g. John Smith)"
+                                        value={customAssignedName}
+                                        onChange={e => setCustomAssignedName(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        {!currentId && (
+                            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', marginTop: '1rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
+                                <input
+                                    type="checkbox"
+                                    id="applyWeek"
+                                    checked={applyToWeek}
+                                    onChange={e => setApplyToWeek(e.target.checked)}
+                                    style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary-600)' }}
+                                />
+                                <label htmlFor="applyWeek" className="form-label" style={{ margin: 0, marginLeft: '0.5rem', cursor: 'pointer' }}>
+                                    Create this shift for Monday-Sunday of the selected week (7 days)
+                                </label>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Shift</button>
+                            <button type="button" onClick={closeForm} className="btn btn-outline" style={{ flex: 1 }}>Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Request Availability Modal */}
+            {isRequestModalOpen && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '500px', margin: 0 }}>
+                        <h3 style={{ marginBottom: '1rem' }}>Request Availability</h3>
+                        <p className="text-sm text-neutral-muted" style={{ marginBottom: '1.5rem' }}>
+                            Send a notification to all caregivers asking them to submit their availability for a specific date range.
+                        </p>
+                        <form onSubmit={handleSendRequest}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label">From Date</label>
+                                    <input type="date" className="form-input" value={reqStartDate} onChange={e => setReqStartDate(e.target.value)} required />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">To Date</label>
+                                    <input type="date" className="form-input" value={reqEndDate} onChange={e => setReqEndDate(e.target.value)} required />
+                                </div>
+                            </div>
+                            <div className="form-group" style={{ marginTop: '1rem' }}>
+                                <label className="form-label">Notification Message</label>
+                                <textarea
+                                    className="form-input"
+                                    rows="3"
+                                    value={reqMessage}
+                                    onChange={e => setReqMessage(e.target.value)}
+                                    placeholder="Optional message to include..."
+                                    required
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={requesting}>
+                                    {requesting ? 'Sending...' : 'Send Request'}
+                                </button>
+                                <button type="button" onClick={() => setIsRequestModalOpen(false)} className="btn btn-outline" style={{ flex: 1 }}>Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {!isFormOpen && (
+                <>
+                    <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.875rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--success-500)' }}></span> Assigned Shift</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--warning-500)' }}></span> Open Shift</div>
+                    </div>
+
+                    <div className="calendar-container">
+                        <div className="calendar-wrapper">
+                            <div className="calendar-row">
+                                {weekDays.map(day => (
+                                    <div key={day.toISOString()} className="calendar-header-cell">
+                                        {format(day, 'EEEE')}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {loading ? (
+                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
+                            ) : (
+                                <div className="calendar-row">
+                                    {weekDays.map(day => {
+                                        const dayStr = format(day, 'yyyy-MM-dd');
+                                        const dayShifts = shifts.filter(s => s.date === dayStr);
+                                        const isTodayDay = isSameDay(day, new Date());
+
+                                        return (
+                                            <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`}>
+                                                <div className="calendar-date-label">
+                                                    <span>{format(day, 'MMM d')}</span>
+                                                    {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
+                                                </div>
+
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                    {dayShifts.map(shift => {
+                                                        const isAssigned = !!shift.assigned_to || !!shift.custom_assigned_name;
+                                                        const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
+
+                                                        return (
+                                                            <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)}>
+                                                                <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                                    <span>{shift.title}</span>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleDelete(shift.id); }}
+                                                                        style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem' }}
+                                                                        title="Delete Shift"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
+                                                                <div style={{ color: 'var(--neutral-600)', marginBottom: '0.2rem', marginTop: '0.2rem', fontSize: '0.7rem' }}>
+                                                                    {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                                </div>
+                                                                <div style={{ fontSize: '0.7rem', color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', fontWeight: 600 }}>
+                                                                    {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : 'Open Shift'}
+                                                                </div>
+                                                                {!isAssigned && (
+                                                                    <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
+                                                                        {availabilityResponses.filter(r => r.date === dayStr).length} available
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {dayShifts.length === 0 && (
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem' }}>
+                                                            No shifts
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
+export default AdminSchedulePage;
