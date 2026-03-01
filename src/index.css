@@ -52,7 +52,45 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --shadow-up: 0 -4px 6px -1px rgb(0 0 0 / 0.05);
-  /* For bottom nav */
+
+  /* Additional Component Colors */
+  --bg-app: #ffffff;
+}
+
+/* Dark Mode Overrides */
+[data-theme='dark'] {
+  --bg-app: #0f172a;
+  /* Slate 900 */
+
+  --neutral-50: #1e293b;
+  /* Slate 800 */
+  --neutral-100: #334155;
+  /* Slate 700 */
+  --neutral-200: #475569;
+  /* Slate 600 */
+  --neutral-300: #64748b;
+  /* Slate 500 */
+  --neutral-400: #94a3b8;
+  /* Slate 400 */
+  --neutral-500: #cbd5e1;
+  /* Slate 300 */
+  --neutral-600: #e2e8f0;
+  /* Slate 200 */
+  --neutral-700: #f1f5f9;
+  /* Slate 100 */
+  --neutral-800: #f8fafc;
+  /* Slate 50 */
+  --neutral-900: #ffffff;
+
+  /* Keep brand primary strong but slightly adjusted for contrast if needed */
+  --primary-50: #042f2e;
+  /* Teal 950 */
+  --primary-100: #134e4a;
+  /* Teal 900 */
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  --shadow-up: 0 -4px 6px -1px rgb(0 0 0 / 0.3);
 }
 
 /* Base Reset & Typography */
@@ -64,7 +102,7 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--neutral-50);
+  background-color: var(--bg-app);
   color: var(--neutral-800);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -76,10 +114,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  max-width: var(--max-width-app);
   margin: 0 auto;
-  background-color: #ffffff;
-  box-shadow: var(--shadow-xl);
+  background-color: var(--bg-app);
   position: relative;
   overflow-x: hidden;
 }
@@ -107,12 +143,12 @@ body {
 
 .bg-primary {
   background-color: var(--primary-600);
-  color: white;
+  color: #ffffff;
 }
 
 .bg-secondary {
   background-color: var(--secondary-600);
-  color: white;
+  color: #ffffff;
 }
 
 .bg-neutral-light {
@@ -172,7 +208,7 @@ h3 {
 
 .btn-primary {
   background-color: var(--primary-600);
-  color: white;
+  color: #ffffff;
 }
 
 .btn-primary:hover {
@@ -200,7 +236,7 @@ h3 {
 
 .btn-danger {
   background-color: var(--danger-500);
-  color: white;
+  color: #ffffff;
 }
 
 .btn-danger:hover {
@@ -229,7 +265,8 @@ h3 {
   font-size: 1rem;
   /* Prevent iOS zoom */
   transition: border-color 0.2s, box-shadow 0.2s;
-  background-color: white;
+  background-color: var(--bg-app);
+  color: var(--neutral-800);
 }
 
 .form-input:focus {
@@ -240,7 +277,7 @@ h3 {
 
 /* Cards */
 .card {
-  background-color: white;
+  background-color: var(--bg-app);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--neutral-200);
@@ -254,6 +291,9 @@ h3 {
   flex: 1;
   display: flex;
   flex-direction: column;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 /* Header */
@@ -261,7 +301,7 @@ h3 {
   position: sticky;
   top: 0;
   z-index: 10;
-  background-color: rgba(255, 255, 255, 0.8);
+  background-color: var(--bg-app);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   padding: 1rem;
@@ -278,7 +318,7 @@ h3 {
   left: 0;
   right: 0;
   height: var(--mobile-nav-height);
-  background-color: white;
+  background-color: var(--bg-app);
   border-top: 1px solid var(--neutral-200);
   display: flex;
   align-items: center;
@@ -286,8 +326,6 @@ h3 {
   padding-bottom: env(safe-area-inset-bottom);
   box-shadow: var(--shadow-up);
   z-index: 40;
-  max-width: var(--max-width-app);
-  margin: 0 auto;
 }
 
 .nav-item {
@@ -316,7 +354,7 @@ h3 {
 .calendar-container {
   width: 100%;
   overflow-x: auto;
-  background-color: white;
+  background-color: var(--bg-app);
   border: 1px solid var(--neutral-200);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -371,7 +409,7 @@ h3 {
 }
 
 .shift-card-mini {
-  background-color: white;
+  background-color: var(--bg-app);
   border-left: 3px solid;
   border-radius: var(--radius-sm);
   padding: 0.4rem;

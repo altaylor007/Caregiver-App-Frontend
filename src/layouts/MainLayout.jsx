@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Users, Bell, User, Contact, FileText } from 'lucide-react'; // Added FileText for Payroll
+import { Home, Calendar, Users, Bell, User, Contact, FileText, Moon, Sun } from 'lucide-react'; // Added Moon, Sun, FileText
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 
 // Assuming these imports are needed for the routes and navigation,
@@ -16,6 +17,7 @@ import { supabase } from '../lib/supabase';
 
 const MainLayout = () => {
     const { user, isAdmin } = useAuth();
+    const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
@@ -59,7 +61,16 @@ const MainLayout = () => {
                 <div>
                     <h1 className="text-primary" style={{ margin: 0 }}>ACT</h1>
                 </div>
-                <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <button
+                        onClick={toggleTheme}
+                        className="btn btn-outline"
+                        style={{ padding: '0.4rem', border: 'none' }}
+                        title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+                    >
+                        {theme === 'light' ? <Moon size={20} className="text-neutral-500" /> : <Sun size={20} className="text-neutral-500" />}
+                    </button>
+
                     <button
                         onClick={() => setShowNotifications(!showNotifications)}
                         className="btn btn-outline"

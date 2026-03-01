@@ -16,45 +16,57 @@ import ProfilePage from './pages/ProfilePage';
 import AuthPage from './pages/AuthPage';
 
 import { useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import AdminRoute from './components/AdminRoute';
 
 const ProtectedRoute = ({ children }) => {
-  const { session, isLoading } = useAuth();
-  if (isLoading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><p>Loading...</p></div>;
+  const { session } = useAuth();
   if (!session) return <Navigate to="/auth" replace />;
   return children;
 };
 
 function App() {
-  const { session, isAdmin } = useAuth();
+  const { session, isAdmin, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <ThemeProvider>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: 'var(--bg-app)', color: 'var(--neutral-800)' }}>
+          <p>Loading application...</p>
+        </div>
+      </ThemeProvider>
+    );
+  }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/auth" element={session ? <Navigate to="/" replace /> : <AuthPage />} />
+    <ThemeProvider>
+      <Router>
+        <Routes>
+          <Route path="/auth" element={session ? <Navigate to="/" replace /> : <AuthPage />} />
 
-        {/* Protected Routes enclosed in MainLayout */}
-        <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
-          <Route index element={isAdmin ? <AdminDashboardPage /> : <DashboardPage />} />
-          <Route path="schedule" element={<SchedulePage />} />
-          <Route path="messages" element={<MessagesPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="responsibilities" element={<CaregiverResponsibilitiesPage />} />
-          <Route path="availability" element={<AvailabilityPage />} />
-          <Route path="directory" element={<CaregiverDirectoryPage />} />
+          {/* Protected Routes enclosed in MainLayout */}
+          <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
+            <Route index element={isAdmin ? <AdminDashboardPage /> : <DashboardPage />} />
+            <Route path="schedule" element={<SchedulePage />} />
+            <Route path="messages" element={<MessagesPage />} />
+            <Route path="profile" element={<ProfilePage />} />
+            <Route path="responsibilities" element={<CaregiverResponsibilitiesPage />} />
+            <Route path="availability" element={<AvailabilityPage />} />
+            <Route path="directory" element={<CaregiverDirectoryPage />} />
 
-          {/* Admin specific sub-pages */}
-          <Route path="admin/caregivers" element={<AdminRoute><AdminCaregiversPage /></AdminRoute>} />
-          <Route path="admin/responsibilities" element={<AdminRoute><AdminResponsibilitiesPage /></AdminRoute>} />
-          <Route path="admin/schedule" element={<AdminRoute><AdminSchedulePage /></AdminRoute>} />
-          <Route path="admin/reports" element={<AdminRoute><AdminReportsPage /></AdminRoute>} />
-          <Route path="admin/payroll" element={<AdminRoute><AdminPayrollPage /></AdminRoute>} />
-        </Route>
+            {/* Admin specific sub-pages */}
+            <Route path="admin/caregivers" element={<AdminRoute><AdminCaregiversPage /></AdminRoute>} />
+            <Route path="admin/responsibilities" element={<AdminRoute><AdminResponsibilitiesPage /></AdminRoute>} />
+            <Route path="admin/schedule" element={<AdminRoute><AdminSchedulePage /></AdminRoute>} />
+            <Route path="admin/reports" element={<AdminRoute><AdminReportsPage /></AdminRoute>} />
+            <Route path="admin/payroll" element={<AdminRoute><AdminPayrollPage /></AdminRoute>} />
+          </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 

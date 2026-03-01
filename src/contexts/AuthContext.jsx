@@ -15,41 +15,61 @@ export const AuthProvider = ({ children }) => {
             return;
         }
         try {
-            const { data } = await supabase.from('users').select('*').eq('id', userId).single();
+            // Using a Promise.race to enforce a timeout just in case it hangs
+            const fetchPromise = supabase.from('users').select('*').eq('id', userId).single();
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
+            const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+            if (error) {
+                console.error("AuthContext: Supabase error in fetchProfile:", error);
+            }
             if (data) setProfile(data);
         } catch (err) {
-            console.error("Error fetching profile:", err);
+            console.error("AuthContext: Exception in fetchProfile:", err);
             setProfile(null);
         }
     };
 
     useEffect(() => {
-        // Check active session
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
-            if (session?.user?.id) {
-                await fetchProfile(session.user.id);
-            }
-            setIsLoading(false);
-        }).catch(err => {
-            console.error("Session error:", err);
-            setIsLoading(false);
-        });
+        let mounted = true;
 
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const initializeAuth = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (mounted) {
+                    setSession(session);
+                    setUser(session?.user ?? null);
+                    if (session?.user?.id) {
+                        await fetchProfile(session.user.id);
+                    }
+                }
+            } catch (err) {
+                console.error("AuthContext: Session error in getSession catch:", err);
+            } finally {
+                if (mounted) setIsLoading(false);
+            }
+        };
+
+        initializeAuth();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (!mounted) return;
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user?.id) {
-                await fetchProfile(session.user.id);
+                // If it's a SIGNED_IN event or similar, fetch profile.
+                // We don't await this so it doesn't block other auth listeners, 
+                // but we let it update state when it finishes.
+                fetchProfile(session.user.id);
             } else {
                 setProfile(null);
             }
-            setIsLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const value = {
@@ -63,7 +83,7 @@ export const AuthProvider = ({ children }) => {
 
     return (
         <AuthContext.Provider value={value}>
-            {!isLoading && children}
+            {children}
         </AuthContext.Provider>
     );
 };
