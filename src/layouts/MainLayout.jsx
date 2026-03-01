@@ -132,9 +132,9 @@ const MainLayout = () => {
                             <Home />
                             <span>Home</span>
                         </NavLink>
-                        <NavLink to="/admin/schedule" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <Calendar />
-                            <span>Schedule</span>
+                        <NavLink to="/admin/payroll" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <FileText />
+                            <span>Hours Reporting</span>
                         </NavLink>
                         <NavLink to="/admin/caregivers" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <Users />

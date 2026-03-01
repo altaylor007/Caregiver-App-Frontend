@@ -39,10 +39,10 @@ const AdminDashboardPage = () => {
                     </div>
                 </Link>
 
-                <Link to="/admin/reports" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <Link to="/admin/payroll" style={{ textDecoration: 'none', color: 'inherit' }}>
                     <div className="card" style={{ height: '100%', textAlign: 'center', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform 0.2s', margin: 0 }} onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'} onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}>
                         <Clock size={32} className="text-secondary" style={{ marginBottom: '0.5rem' }} />
-                        <h4 style={{ fontSize: '0.875rem' }}>Hours Report</h4>
+                        <h4 style={{ fontSize: '0.875rem' }}>Hours Reporting</h4>
                     </div>
                 </Link>
             </div>
