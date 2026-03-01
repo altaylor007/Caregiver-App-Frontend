@@ -16,7 +16,7 @@ import { supabase } from '../lib/supabase';
 // import AdminPayrollPage from '../pages/AdminPayrollPage'; // This import is added as per instruction.
 
 const MainLayout = () => {
-    const { profile, signOut, isAdmin, isSuperAdmin } = useAuth();
+    const { user, profile, signOut, isAdmin, isSuperAdmin } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState([]);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const SchedulePage = () => {
@@ -10,14 +10,20 @@ const SchedulePage = () => {
     const [loading, setLoading] = useState(true);
 
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [showOnlyMyShifts, setShowOnlyMyShifts] = useState(false);
 
     const fetchSchedule = async () => {
         setLoading(true);
 
         const monthStart = startOfMonth(currentDate);
         const monthEnd = endOfMonth(currentDate);
-        const startDateStr = format(monthStart, 'yyyy-MM-dd');
-        const endDateStr = format(monthEnd, 'yyyy-MM-dd');
+
+        // Use startOfWeek and endOfWeek to fetch full calendar grid range
+        const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+        const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+
+        const startDateStr = format(calendarStart, 'yyyy-MM-dd');
+        const endDateStr = format(calendarEnd, 'yyyy-MM-dd');
 
         // Fetch user's assigned shifts AND open shifts for this week
         const { data, error } = await supabase
@@ -64,15 +70,29 @@ const SchedulePage = () => {
 
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
-    const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-    // 0 is Sunday. We'll start calendar on Sunday.
-    const firstDayIndex = monthStart.getDay();
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+    const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
     return (
         <div style={{ paddingBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                <h2 style={{ margin: 0 }}>My Schedule</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <h2 style={{ margin: 0 }}>My Schedule</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: showOnlyMyShifts ? 'var(--primary-50)' : 'transparent', padding: '0.5rem', borderRadius: 'var(--radius-md)', border: showOnlyMyShifts ? '1px solid var(--primary-200)' : '1px solid transparent', transition: 'all 0.2s' }}>
+                        <input
+                            type="checkbox"
+                            id="myScheduleToggle"
+                            checked={showOnlyMyShifts}
+                            onChange={(e) => setShowOnlyMyShifts(e.target.checked)}
+                            style={{ width: '1.1rem', height: '1.1rem', accentColor: 'var(--primary-600)', cursor: 'pointer' }}
+                        />
+                        <label htmlFor="myScheduleToggle" style={{ fontSize: '0.875rem', fontWeight: showOnlyMyShifts ? 600 : 400, color: showOnlyMyShifts ? 'var(--primary-700)' : 'var(--neutral-700)', cursor: 'pointer', margin: 0 }}>
+                            My schedule only
+                        </label>
+                    </div>
+                </div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <button onClick={prevMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
                         <ChevronLeft size={20} />
@@ -94,9 +114,9 @@ const SchedulePage = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--warning-500)' }}></span> Open (Available)</div>
             </div>
 
-            <div className="calendar-container">
+            <div className={`calendar-container ${showOnlyMyShifts ? 'is-my-schedule-mode' : ''}`} style={showOnlyMyShifts ? { border: '2px solid var(--primary-300)', backgroundColor: '#fafcff' } : {}}>
                 <div className="calendar-wrapper">
-                    <div className="calendar-row">
+                    <div className="calendar-row" style={showOnlyMyShifts ? { backgroundColor: 'var(--primary-50)' } : {}}>
                         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                             <div key={day} className="calendar-header-cell">
                                 {day}
@@ -108,18 +128,19 @@ const SchedulePage = () => {
                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
                     ) : (
                         <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                            {/* Empty padding days for alignment */}
-                            {Array.from({ length: firstDayIndex }).map((_, i) => (
-                                <div key={`empty-${i}`} className="calendar-day-cell" style={{ backgroundColor: 'var(--neutral-50)', opacity: 0.5 }}></div>
-                            ))}
-
-                            {daysInMonth.map(day => {
+                            {calendarDays.map(day => {
                                 const dayStr = format(day, 'yyyy-MM-dd');
-                                const dayShifts = shifts.filter(s => s.date === dayStr);
+                                let dayShifts = shifts.filter(s => s.date === dayStr);
+
+                                if (showOnlyMyShifts) {
+                                    dayShifts = dayShifts.filter(s => s.assigned_to === user.id);
+                                }
+
                                 const isTodayDay = isSameDay(day, new Date());
+                                const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                 return (
-                                    <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`} style={{ gridColumn: 'auto' }}>
+                                    <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''}`} style={{ gridColumn: 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : 'transparent', opacity: !isCurrentMonthDay ? 0.7 : 1 }}>
                                         <div className="calendar-date-label">
                                             <span>{format(day, 'd')}</span>
                                             {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
