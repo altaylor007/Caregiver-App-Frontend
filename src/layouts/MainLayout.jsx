@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Users, Bell, User, Contact, FileText, Moon, Sun } from 'lucide-react'; // Added Moon, Sun, FileText
+import { Home, Calendar, Users, Bell, User, Contact, FileText, Moon, Sun, FolderOpen, MessageSquare } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
@@ -140,15 +140,12 @@ const MainLayout = () => {
                             <Users />
                             <span>Team</span>
                         </NavLink>
-                        <NavLink to="/admin/payroll" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <FileText />
-                            <span>Payroll</span>
+                        <NavLink to="/admin/documents" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <FolderOpen />
+                            <span>Documents</span>
                         </NavLink>
-                        <NavLink
-                            to="/messages"
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <Users />
+                        <NavLink to="/messages" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <MessageSquare />
                             <span>Messages</span>
                         </NavLink>
                     </>
@@ -175,8 +172,16 @@ const MainLayout = () => {
                             to="/messages"
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         >
-                            <Users />
+                            <MessageSquare />
                             <span>Messages</span>
+                        </NavLink>
+
+                        <NavLink
+                            to="/documents"
+                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                        >
+                            <FolderOpen />
+                            <span>Documents</span>
                         </NavLink>
 
                         <NavLink
