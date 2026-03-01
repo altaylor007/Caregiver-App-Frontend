@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Users, Bell, User, Contact, FileText, Moon, Sun, FolderOpen, MessageSquare } from 'lucide-react';
+import { LogOut, Home, Calendar, Users, MessageSquare, Menu, X, FileText, Bell, FolderOpen, Shield, User, Contact, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
@@ -16,14 +16,14 @@ import { supabase } from '../lib/supabase';
 // import AdminPayrollPage from '../pages/AdminPayrollPage'; // This import is added as per instruction.
 
 const MainLayout = () => {
-    const { user, isAdmin } = useAuth();
+    const { profile, signOut, isAdmin, isSuperAdmin } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
 
     useEffect(() => {
-        if (!user) return;
+        if (!profile) return;
 
         const fetchNotifications = async () => {
             const { data } = await supabase
@@ -144,6 +144,12 @@ const MainLayout = () => {
                             <Users />
                             <span>Team</span>
                         </NavLink>
+                        {isSuperAdmin && (
+                            <NavLink to="/admin/roles" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <Shield />
+                                <span>Roles</span>
+                            </NavLink>
+                        )}
                         <NavLink to="/admin/documents" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <FolderOpen />
                             <span>Documents</span>

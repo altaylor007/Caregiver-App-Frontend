@@ -77,7 +77,8 @@ export const AuthProvider = ({ children }) => {
         user,
         profile,
         isLoading,
-        isAdmin: profile?.role === 'admin',
+        isAdmin: profile?.role === 'admin' || profile?.role === 'manager',
+        isSuperAdmin: profile?.role === 'admin',
         signOut: () => supabase.auth.signOut(),
     };
 

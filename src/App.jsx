@@ -13,6 +13,7 @@ import SchedulePage from './pages/SchedulePage';
 import CaregiverDirectoryPage from './pages/CaregiverDirectoryPage';
 import MessagesPage from './pages/MessagesPage';
 import ProfilePage from './pages/ProfilePage';
+import AdminRolesPage from './pages/AdminRolesPage';
 import AuthPage from './pages/AuthPage';
 
 import { useAuth } from './contexts/AuthContext';
@@ -60,6 +61,7 @@ function App() {
             <Route path="admin/schedule" element={<AdminRoute><AdminSchedulePage /></AdminRoute>} />
             <Route path="admin/reports" element={<AdminRoute><AdminReportsPage /></AdminRoute>} />
             <Route path="admin/payroll" element={<AdminRoute><AdminPayrollPage /></AdminRoute>} />
+            <Route path="admin/roles" element={<AdminRoute><AdminRolesPage /></AdminRoute>} />
           </Route>
 
           {/* Fallback */}
