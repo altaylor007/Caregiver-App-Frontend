@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Trash2, Send, Check } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, addWeeks } from 'date-fns';
+import { Plus, Edit2, Trash2, Send, Check, MessageSquare } from 'lucide-react'; // Added MessageSquare
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, addWeeks, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
 const AdminSchedulePage = () => {
@@ -11,7 +11,7 @@ const AdminSchedulePage = () => {
         for (let m of [0, 15, 30, 45]) {
             const hh = String(h).padStart(2, '0');
             const mm = String(m).padStart(2, '0');
-            const val = `${hh}:${mm}`;
+            const val = `${hh}:${mm} `;
             const label = new Date(`1970-01-01T${val}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
             timeOptions.push({ val, label });
         }
@@ -24,6 +24,7 @@ const AdminSchedulePage = () => {
 
     const [currentDate, setCurrentDate] = useState(new Date());
     const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'availability'
+    const [filterCaregiverId, setFilterCaregiverId] = useState(''); // Specific caregiver or empty for all
 
     // Form State
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -57,10 +58,15 @@ const AdminSchedulePage = () => {
 
         const monthStart = startOfMonth(currentDate);
         const monthEnd = endOfMonth(currentDate);
-        const startDateStr = format(monthStart, 'yyyy-MM-dd');
-        const endDateStr = format(monthEnd, 'yyyy-MM-dd');
 
-        // Fetch shifts for this week
+        // Fetch boundaries that cover the full calendar weeks
+        const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+        const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+
+        const startDateStr = format(calendarStart, 'yyyy-MM-dd');
+        const endDateStr = format(calendarEnd, 'yyyy-MM-dd');
+
+        // Fetch shifts for this range
         const shiftsData = await supabase
             .from('shifts')
             .select('*, users(full_name)')
@@ -78,7 +84,7 @@ const AdminSchedulePage = () => {
         // Fetch availability responses for this entire month (all statuses for full picture)
         const availabilityData = await supabase
             .from('availability_responses')
-            .select('user_id, date, status')
+            .select('user_id, date, status, notes')
             .gte('date', startDateStr)
             .lte('date', endDateStr);
 
@@ -155,7 +161,7 @@ const AdminSchedulePage = () => {
             if (availRecord?.status === 'unavailable') {
                 const caregiverName = caregivers.find(c => c.id === finalAssignedTo)?.full_name || 'This caregiver';
                 const confirmed = window.confirm(
-                    `⚠️ Availability conflict\n\n${caregiverName} has marked themselves UNAVAILABLE on ${date}.\n\nDo you want to save this shift anyway?`
+                    `⚠️ Availability conflict\n\n${caregiverName} has marked themselves UNAVAILABLE on ${date}.\n\nDo you want to save this shift anyway ? `
                 );
                 if (!confirmed) return;
             }
@@ -315,8 +321,9 @@ const AdminSchedulePage = () => {
     const monthEnd = endOfMonth(currentDate);
     const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-    // 0 is Sunday. We'll start calendar on Sunday.
-    const firstDayIndex = monthStart.getDay();
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+    const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
     return (
         <div>
@@ -348,6 +355,21 @@ const AdminSchedulePage = () => {
                     </div>
                     {viewMode === 'calendar' && (
                         <>
+                            <div style={{ marginLeft: '1rem' }}>
+                                <select
+                                    className="form-input"
+                                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem', width: 'auto', minWidth: '180px' }}
+                                    value={filterCaregiverId}
+                                    onChange={(e) => setFilterCaregiverId(e.target.value)}
+                                >
+                                    <option value="">View: Published Schedule (All)</option>
+                                    <optgroup label="Caregivers">
+                                        {caregivers.map(cg => (
+                                            <option key={cg.id} value={cg.id}>{cg.full_name || 'Unnamed'}'s Schedule</option>
+                                        ))}
+                                    </optgroup>
+                                </select>
+                            </div>
                             <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
                                 <Plus size={16} /> New Shift
                             </button>
@@ -390,9 +412,9 @@ const AdminSchedulePage = () => {
                                                     setStartTime(template.start_time.substring(0, 5));
                                                     setEndTime(template.end_time.substring(0, 5));
                                                 }}
-                                                title={`Use template: ${template.title}`}
+                                                title={`Use template: ${template.title} `}
                                             >
-                                                {template.title} ({format(parseISO(`1970-01-01T${template.start_time}`), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time}`), 'h:mma').toLowerCase()})
+                                                {template.title} ({format(parseISO(`1970-01-01T${template.start_time} `), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time} `), 'h:mma').toLowerCase()})
                                             </button>
                                             <button
                                                 type="button"
@@ -549,13 +571,13 @@ const AdminSchedulePage = () => {
                     <div style={{ overflowX: 'auto' }}>
                         {/* Legend */}
                         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.8rem', marginBottom: '1rem', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--success-200)', border: '1.5px solid var(--success-600)', display: 'inline-block' }}></span> All Day</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--success-500)', border: '1.5px solid var(--success-600)', display: 'inline-block' }}></span> All Day</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: '#bfdbfe', border: '1.5px solid #3b82f6', display: 'inline-block' }}></span> Morning Only</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: '#ddd6fe', border: '1.5px solid #7c3aed', display: 'inline-block' }}></span> Evening Only</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--danger-100)', border: '1.5px solid var(--danger-500)', display: 'inline-block' }}></span> Unavailable</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--danger-500)', display: 'inline-block' }}></span> Unavailable</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--neutral-100)', border: '1.5px solid var(--neutral-300)', display: 'inline-block' }}></span> No Response</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                <span style={{ width: 18, height: 18, borderRadius: 3, backgroundColor: 'var(--success-200)', border: '3px solid var(--warning-500)', display: 'inline-block' }}></span>
+                                <span style={{ width: 18, height: 18, borderRadius: 3, backgroundColor: 'var(--success-500)', border: '3px solid var(--warning-500)', display: 'inline-block' }}></span>
                                 Open Shift Available (click to assign)
                             </div>
                         </div>
@@ -591,13 +613,19 @@ const AdminSchedulePage = () => {
                                                 const openShiftsOnDay = shifts.filter(s => s.date === dayStr && !s.assigned_to && !s.custom_assigned_name);
                                                 const isToday = isSameDay(day, new Date());
 
-                                                let bgColor = 'var(--neutral-100)';
+                                                let bgColor = 'repeating-linear-gradient(45deg, var(--neutral-50), var(--neutral-50) 5px, var(--neutral-100) 5px, var(--neutral-100) 10px)'; // Hatching for none
                                                 let title = 'No response';
                                                 let emoji = '';
-                                                if (avail?.status === 'available') { bgColor = 'var(--success-200)'; title = 'Available all day'; emoji = '✓'; }
+
+                                                if (avail?.status === 'available') { bgColor = 'var(--success-500)'; title = 'Available all day'; emoji = '✓'; }
                                                 else if (avail?.status === 'available_morning') { bgColor = '#bfdbfe'; title = 'Available morning only'; emoji = 'AM'; }
                                                 else if (avail?.status === 'available_evening') { bgColor = '#ddd6fe'; title = 'Available evening only'; emoji = 'PM'; }
-                                                else if (avail?.status === 'unavailable') { bgColor = 'var(--danger-100)'; title = 'Unavailable'; emoji = '✗'; }
+                                                else if (avail?.status === 'unavailable') { bgColor = 'var(--danger-500)'; title = 'Unavailable'; emoji = ''; }
+
+                                                const hasNote = !!avail?.notes;
+                                                if (hasNote) {
+                                                    title += ` | Note: "${avail.notes}"`;
+                                                }
 
                                                 const hasOpenShift = openShiftsOnDay.length > 0;
                                                 const canAssign = avail && avail.status !== 'unavailable';
@@ -605,7 +633,7 @@ const AdminSchedulePage = () => {
                                                 return (
                                                     <td key={dayStr} style={{ padding: '0.15rem 0.1rem', textAlign: 'center' }}>
                                                         <div
-                                                            title={`${cg.full_name}: ${title}${hasOpenShift ? ` | ${openShiftsOnDay.length} open shift(s) — click to assign` : ''}`}
+                                                            title={`${cg.full_name}: ${title}${hasOpenShift ? ` | ${openShiftsOnDay.length} open shift(s) — click to assign` : ''} `}
                                                             onClick={() => {
                                                                 if (avail && avail.status !== 'unavailable') {
                                                                     setCellDialog({ caregiver: cg, dayStr, availStatus: avail?.status || null, dayShifts: shifts.filter(s => s.date === dayStr) });
@@ -618,7 +646,7 @@ const AdminSchedulePage = () => {
                                                                 minWidth: '24px',
                                                                 height: '28px',
                                                                 borderRadius: '4px',
-                                                                backgroundColor: bgColor,
+                                                                background: bgColor,
                                                                 display: 'flex',
                                                                 alignItems: 'center',
                                                                 justifyContent: 'center',
@@ -627,12 +655,20 @@ const AdminSchedulePage = () => {
                                                                 cursor: canAssign ? 'pointer' : 'default',
                                                                 border: hasOpenShift ? '2px solid var(--warning-500)' : (isToday ? '2px solid var(--primary-400)' : '1px solid transparent'),
                                                                 transition: 'transform 0.1s',
-                                                                color: avail?.status === 'unavailable' ? 'var(--danger-700)' : 'var(--neutral-700)',
+                                                                color: avail?.status === 'unavailable' ? 'white' : 'var(--neutral-800)',
+                                                                position: 'relative'
                                                             }}
                                                             onMouseEnter={e => { if (canAssign) e.currentTarget.style.transform = 'scale(1.15)'; }}
                                                             onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
                                                         >
                                                             {emoji}
+                                                            {hasNote && (
+                                                                <MessageSquare
+                                                                    size={10}
+                                                                    fill="currentColor"
+                                                                    style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: 'white', borderRadius: '50%', padding: '1px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', color: 'var(--primary-600)' }}
+                                                                />
+                                                            )}
                                                         </div>
                                                     </td>
                                                 );
@@ -670,11 +706,11 @@ const AdminSchedulePage = () => {
                                             {cellDialog.dayShifts.map(s => {
                                                 const isAssigned = !!s.assigned_to || !!s.custom_assigned_name;
                                                 return (
-                                                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: isAssigned ? 'var(--success-50)' : 'var(--warning-50)', border: `1px solid ${isAssigned ? 'var(--success-200)' : 'var(--warning-300)'}` }}>
+                                                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: isAssigned ? 'var(--success-50)' : 'var(--warning-50)', border: `1px solid ${isAssigned ? 'var(--success-200)' : 'var(--warning-300)'} ` }}>
                                                         <div>
                                                             <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.title}</div>
                                                             <div style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
-                                                                {format(new Date(`1970-01-01T${s.start_time.substring(11, 16)}`), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)}`), 'h:mm a')}
+                                                                {format(new Date(`1970-01-01T${s.start_time.substring(11, 16)} `), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)} `), 'h:mm a')}
                                                             </div>
                                                         </div>
                                                         <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)' }}>
@@ -699,7 +735,7 @@ const AdminSchedulePage = () => {
                                                     <option value="">-- Select a shift --</option>
                                                     {cellDialog.dayShifts.filter(s => !s.assigned_to && !s.custom_assigned_name).map(s => (
                                                         <option key={s.id} value={s.id}>
-                                                            {s.title} ({format(new Date(`1970-01-01T${s.start_time.substring(11, 16)}`), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)}`), 'h:mm a')})
+                                                            {s.title} ({format(new Date(`1970-01-01T${s.start_time.substring(11, 16)} `), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)} `), 'h:mm a')})
                                                         </option>
                                                     ))}
                                                 </select>
@@ -755,29 +791,30 @@ const AdminSchedulePage = () => {
                                     <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
                                 ) : (
                                     <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                                        {/* Empty padding days for alignment */}
-                                        {Array.from({ length: firstDayIndex }).map((_, i) => (
-                                            <div key={`empty-${i}`} className="calendar-day-cell" style={{ backgroundColor: 'var(--neutral-50)', opacity: 0.5 }}></div>
-                                        ))}
-
-                                        {daysInMonth.map(day => {
+                                        {calendarDays.map(day => {
                                             const dayStr = format(day, 'yyyy-MM-dd');
-                                            const dayShifts = shifts.filter(s => s.date === dayStr);
+                                            let dayShifts = shifts.filter(s => s.date === dayStr);
+
+                                            if (filterCaregiverId) {
+                                                dayShifts = dayShifts.filter(s => s.assigned_to === filterCaregiverId);
+                                            }
+
                                             const isTodayDay = isSameDay(day, new Date());
+                                            const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                             return (
                                                 <div
                                                     key={dayStr}
-                                                    className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`}
-                                                    style={{ gridColumn: 'auto', cursor: dayShifts.length === 0 ? 'pointer' : 'auto' }}
+                                                    className={`calendar - day - cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''} `}
+                                                    style={{ gridColumn: 'auto', cursor: dayShifts.length === 0 ? 'pointer' : 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : (filterCaregiverId ? '#fafcff' : 'transparent'), opacity: !isCurrentMonthDay ? 0.7 : 1 }}
                                                     onClick={() => {
                                                         if (dayShifts.length === 0) {
                                                             openNewForm();
                                                             setDate(dayStr);
+                                                            if (filterCaregiverId) setAssignedTo(filterCaregiverId);
                                                         }
                                                     }}
-                                                >
-                                                    <div className="calendar-date-label">
+                                                >                                                  <div className="calendar-date-label">
                                                         <span>{format(day, 'd')}</span>
                                                         {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
                                                     </div>
@@ -788,7 +825,7 @@ const AdminSchedulePage = () => {
                                                             const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
 
                                                             return (
-                                                                <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)}>
+                                                                <div key={shift.id} className={`shift - card - mini ${cardClass} `} onClick={() => openEditForm(shift)}>
                                                                     <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                                                         <span>{shift.title}</span>
                                                                         <button
