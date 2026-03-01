@@ -16,6 +16,7 @@ const AdminSchedulePage = () => {
     // Form State
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [currentId, setCurrentId] = useState(null);
+    const [currentShift, setCurrentShift] = useState(null);
     const [applyToWeek, setApplyToWeek] = useState(false);
 
     const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -86,6 +87,7 @@ const AdminSchedulePage = () => {
     const openNewForm = () => {
         setIsFormOpen(true);
         setCurrentId(null);
+        setCurrentShift(null);
         setTitle('');
         setDate(format(new Date(), 'yyyy-MM-dd'));
         setStartTime('09:30');
@@ -97,6 +99,7 @@ const AdminSchedulePage = () => {
     const openEditForm = (shift) => {
         setIsFormOpen(true);
         setCurrentId(shift.id);
+        setCurrentShift(shift);
         setTitle(shift.title);
         setDate(shift.date);
         // Extract HH:mm from ISO
@@ -117,6 +120,7 @@ const AdminSchedulePage = () => {
     const closeForm = () => {
         setIsFormOpen(false);
         setFormError('');
+        setCurrentShift(null);
     };
 
     const handleSubmit = async (e) => {
@@ -277,153 +281,158 @@ const AdminSchedulePage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <h2>Master Schedule</h2>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {!isFormOpen && (
-                        <>
-                            <button onClick={prevMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
-                                <ChevronLeft size={20} />
-                            </button>
-                            <h3 style={{ margin: 0, minWidth: '150px', textAlign: 'center', fontSize: '1.2rem' }}>
-                                {format(currentDate, 'MMMM yyyy')}
-                            </h3>
-                            <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
-                                Today
-                            </button>
-                            <button onClick={nextMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
-                                <ChevronRight size={20} />
-                            </button>
-                            <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
-                                <Plus size={16} /> New Shift
-                            </button>
-                            <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-secondary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
-                                <CalendarIcon size={16} /> Request Availability
-                            </button>
-                        </>
-                    )}
+                    <button onClick={prevMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                        <ChevronLeft size={20} />
+                    </button>
+                    <h3 style={{ margin: 0, minWidth: '150px', textAlign: 'center', fontSize: '1.2rem' }}>
+                        {format(currentDate, 'MMMM yyyy')}
+                    </h3>
+                    <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
+                        Today
+                    </button>
+                    <button onClick={nextMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                        <ChevronRight size={20} />
+                    </button>
+                    <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
+                        <Plus size={16} /> New Shift
+                    </button>
+                    <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-secondary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
+                        <CalendarIcon size={16} /> Request Availability
+                    </button>
                 </div>
             </div>
 
+            {/* Shift Edit Modal */}
             {isFormOpen && (
-                <div className="card" style={{ border: '2px solid var(--primary-500)', marginBottom: '1.5rem' }}>
-                    <h3 style={{ marginBottom: '1rem' }}>{currentId ? 'Edit Shift' : 'Create Shift'}</h3>
-
-                    {formError && (
-                        <div style={{ backgroundColor: 'var(--danger-50)', color: 'var(--danger-600)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                            {formError}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit}>
-                        <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span className="text-sm font-semibold" style={{ marginRight: '0.5rem', color: 'var(--neutral-600)' }}>Templates:</span>
-                            {shiftTemplates.length === 0 && <span className="text-xs text-neutral-500 italic">No templates saved yet.</span>}
-                            {shiftTemplates.map(template => (
-                                <div key={template.id} style={{ display: 'inline-flex', alignItems: 'center' }} className="btn btn-outline text-xs">
-                                    <button
-                                        type="button"
-                                        style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'inherit' }}
-                                        onClick={() => {
-                                            setTitle(template.title);
-                                            // Handle cases where time has seconds
-                                            setStartTime(template.start_time.substring(0, 5));
-                                            setEndTime(template.end_time.substring(0, 5));
-                                        }}
-                                        title={`Use template: ${template.title}`}
-                                    >
-                                        {template.title} ({format(parseISO(`1970-01-01T${template.start_time}`), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time}`), 'h:mma').toLowerCase()})
-                                    </button>
-                                    <button
-                                        type="button"
-                                        title={`Delete ${template.title} template`}
-                                        onClick={() => handleDeleteTemplate(template.id)}
-                                        style={{ background: 'none', border: 'none', marginLeft: '0.5rem', cursor: 'pointer', padding: '0.1rem', display: 'flex', alignItems: 'center', color: 'var(--neutral-400)' }}
-                                        onMouseOver={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
-                                        onMouseOut={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
-                                    >
-                                        <Trash2 size={12} />
-                                    </button>
-                                </div>
-                            ))}
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', overflowY: 'auto' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '600px', margin: 'auto', maxHeight: 'max-content', border: '2px solid var(--primary-500)', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3 style={{ margin: 0 }}>{currentId ? 'Edit Shift Details' : 'Create New Shift'}</h3>
+                            <button type="button" onClick={closeForm} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', lineHeight: 1, color: 'var(--neutral-500)' }}>&times;</button>
                         </div>
 
-                        <div className="form-group">
-                            <label className="form-label">Shift Title / Type</label>
-                            <input type="text" className="form-input" placeholder="e.g. Morning Shift" value={title} onChange={e => setTitle(e.target.value)} required />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">Date</label>
-                            <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} required />
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                            <div className="form-group">
-                                <label className="form-label">Start Time</label>
-                                <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} step="900" required />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">End Time</label>
-                                <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} step="900" required />
-                            </div>
-                        </div>
-
-                        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: assignedTo === 'custom' ? '1fr 1fr' : '1fr', gap: '1rem', alignItems: 'end' }}>
-                            <div>
-                                <label className="form-label">Assign To</label>
-                                <select className="form-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-                                    <option value="">-- Open Shift (Unassigned) --</option>
-                                    <option value="custom">-- 📍 Other (Manual Entry) --</option>
-                                    {caregivers.map(cg => {
-                                        const availRecord = availabilityResponses.find(r => r.user_id === cg.id && r.date === date);
-                                        let availLabel = '';
-                                        if (availRecord?.status === 'available') availLabel = '✓ (All Day)';
-                                        else if (availRecord?.status === 'available_morning') availLabel = '✓ (Morning)';
-                                        else if (availRecord?.status === 'available_evening') availLabel = '✓ (Evening)';
-
-                                        return (
-                                            <option key={cg.id} value={cg.id}>
-                                                {cg.full_name || 'Unnamed Caregiver'} {availLabel}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                            </div>
-
-                            {assignedTo === 'custom' && (
-                                <div>
-                                    <label className="form-label">Caregiver Name</label>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        placeholder="Enter name (e.g. John Smith)"
-                                        value={customAssignedName}
-                                        onChange={e => setCustomAssignedName(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                            )}
-                        </div>
-
-                        {!currentId && (
-                            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', marginTop: '1rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
-                                <input
-                                    type="checkbox"
-                                    id="applyWeek"
-                                    checked={applyToWeek}
-                                    onChange={e => setApplyToWeek(e.target.checked)}
-                                    style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary-600)' }}
-                                />
-                                <label htmlFor="applyWeek" className="form-label" style={{ margin: 0, marginLeft: '0.5rem', cursor: 'pointer' }}>
-                                    Create this shift for Monday-Sunday of the selected week (7 days)
-                                </label>
+                        {formError && (
+                            <div style={{ backgroundColor: 'var(--danger-50)', color: 'var(--danger-600)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                                {formError}
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
-                            <button type="submit" className="btn btn-primary" style={{ flex: 1, minWidth: '150px' }}>Save Shift</button>
-                            <button type="button" onClick={handleSaveAsTemplate} className="btn btn-secondary" style={{ flex: 1, minWidth: '150px' }}>Save as Template</button>
-                            <button type="button" onClick={closeForm} className="btn btn-outline" style={{ flex: 1, minWidth: '100px' }}>Cancel</button>
-                        </div>
-                    </form>
+                        <form onSubmit={handleSubmit}>
+                            <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <span className="text-sm font-semibold" style={{ marginRight: '0.5rem', color: 'var(--neutral-600)' }}>Templates:</span>
+                                {shiftTemplates.length === 0 && <span className="text-xs text-neutral-500 italic">No templates saved yet.</span>}
+                                {shiftTemplates.map(template => (
+                                    <div key={template.id} style={{ display: 'inline-flex', alignItems: 'center' }} className="btn btn-outline text-xs">
+                                        <button
+                                            type="button"
+                                            style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'inherit' }}
+                                            onClick={() => {
+                                                setTitle(template.title);
+                                                // Handle cases where time has seconds
+                                                setStartTime(template.start_time.substring(0, 5));
+                                                setEndTime(template.end_time.substring(0, 5));
+                                            }}
+                                            title={`Use template: ${template.title}`}
+                                        >
+                                            {template.title} ({format(parseISO(`1970-01-01T${template.start_time}`), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time}`), 'h:mma').toLowerCase()})
+                                        </button>
+                                        <button
+                                            type="button"
+                                            title={`Delete ${template.title} template`}
+                                            onClick={() => handleDeleteTemplate(template.id)}
+                                            style={{ background: 'none', border: 'none', marginLeft: '0.5rem', cursor: 'pointer', padding: '0.1rem', display: 'flex', alignItems: 'center', color: 'var(--neutral-400)' }}
+                                            onMouseOver={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
+                                            onMouseOut={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
+                                        >
+                                            <Trash2 size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Shift Title / Type</label>
+                                <input type="text" className="form-input" placeholder="e.g. Morning Shift" value={title} onChange={e => setTitle(e.target.value)} required />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Date</label>
+                                <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} required />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Start Time</label>
+                                    <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} step="900" required />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">End Time</label>
+                                    <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} step="900" required />
+                                </div>
+                            </div>
+
+                            <div className="form-group" style={{ display: 'grid', gridTemplateColumns: assignedTo === 'custom' ? '1fr 1fr' : '1fr', gap: '1rem', alignItems: 'end' }}>
+                                <div>
+                                    <label className="form-label">Assign To</label>
+                                    <select className="form-input" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+                                        <option value="">-- Open Shift (Unassigned) --</option>
+                                        <option value="custom">-- 📍 Other (Manual Entry) --</option>
+                                        {currentShift?.users && assignedTo === currentShift.assigned_to && !caregivers.find(c => c.id === assignedTo) && (
+                                            <option value={assignedTo}>{currentShift.users.full_name || 'Caregiver'} (Currently Assigned)</option>
+                                        )}
+                                        {caregivers.map(cg => {
+                                            const availRecord = availabilityResponses.find(r => r.user_id === cg.id && r.date === date);
+                                            let availLabel = '';
+                                            if (availRecord?.status === 'available') availLabel = '✓ (All Day)';
+                                            else if (availRecord?.status === 'available_morning') availLabel = '✓ (Morning)';
+                                            else if (availRecord?.status === 'available_evening') availLabel = '✓ (Evening)';
+
+                                            return (
+                                                <option key={cg.id} value={cg.id}>
+                                                    {cg.full_name || 'Unnamed Caregiver'} {availLabel}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </div>
+
+                                {assignedTo === 'custom' && (
+                                    <div>
+                                        <label className="form-label">Caregiver Name</label>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="Enter name (e.g. John Smith)"
+                                            value={customAssignedName}
+                                            onChange={e => setCustomAssignedName(e.target.value)}
+                                            required
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {!currentId && (
+                                <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', marginTop: '1rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
+                                    <input
+                                        type="checkbox"
+                                        id="applyWeek"
+                                        checked={applyToWeek}
+                                        onChange={e => setApplyToWeek(e.target.checked)}
+                                        style={{ width: '1.2rem', height: '1.2rem', accentColor: 'var(--primary-600)' }}
+                                    />
+                                    <label htmlFor="applyWeek" className="form-label" style={{ margin: 0, marginLeft: '0.5rem', cursor: 'pointer' }}>
+                                        Create this shift for Monday-Sunday of the selected week (7 days)
+                                    </label>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+                                <button type="submit" className="btn btn-primary" style={{ flex: 1, minWidth: '150px' }}>Save Shift</button>
+                                <button type="button" onClick={handleSaveAsTemplate} className="btn btn-secondary" style={{ flex: 1, minWidth: '150px' }}>Save Template</button>
+                                <button type="button" onClick={closeForm} className="btn btn-outline" style={{ flex: 1, minWidth: '100px' }}>Cancel</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
 
@@ -468,90 +477,86 @@ const AdminSchedulePage = () => {
                 </div>
             )}
 
-            {!isFormOpen && (
-                <>
-                    <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.875rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--success-500)' }}></span> Assigned Shift</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--warning-500)' }}></span> Open Shift</div>
-                    </div>
+            <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.875rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--success-500)' }}></span> Assigned Shift</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--warning-500)' }}></span> Open Shift</div>
+            </div>
 
-                    <div className="calendar-container">
-                        <div className="calendar-wrapper">
-                            <div className="calendar-row">
-                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                                    <div key={day} className="calendar-header-cell">
-                                        {day}
-                                    </div>
-                                ))}
+            <div className="calendar-container">
+                <div className="calendar-wrapper">
+                    <div className="calendar-row">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                            <div key={day} className="calendar-header-cell">
+                                {day}
                             </div>
-
-                            {loading ? (
-                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
-                            ) : (
-                                <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                                    {/* Empty padding days for alignment */}
-                                    {Array.from({ length: firstDayIndex }).map((_, i) => (
-                                        <div key={`empty-${i}`} className="calendar-day-cell" style={{ backgroundColor: 'var(--neutral-50)', opacity: 0.5 }}></div>
-                                    ))}
-
-                                    {daysInMonth.map(day => {
-                                        const dayStr = format(day, 'yyyy-MM-dd');
-                                        const dayShifts = shifts.filter(s => s.date === dayStr);
-                                        const isTodayDay = isSameDay(day, new Date());
-
-                                        return (
-                                            <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`} style={{ gridColumn: 'auto' }}>
-                                                <div className="calendar-date-label">
-                                                    <span>{format(day, 'd')}</span>
-                                                    {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
-                                                </div>
-
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                                    {dayShifts.map(shift => {
-                                                        const isAssigned = !!shift.assigned_to || !!shift.custom_assigned_name;
-                                                        const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
-
-                                                        return (
-                                                            <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)}>
-                                                                <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                                    <span>{shift.title}</span>
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); handleDelete(shift.id); }}
-                                                                        style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem' }}
-                                                                        title="Delete Shift"
-                                                                    >
-                                                                        <Trash2 size={12} />
-                                                                    </button>
-                                                                </div>
-                                                                <div style={{ color: 'var(--neutral-600)', marginBottom: '0.2rem', marginTop: '0.2rem', fontSize: '0.7rem' }}>
-                                                                    {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
-                                                                </div>
-                                                                <div style={{ fontSize: '0.7rem', color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', fontWeight: 600 }}>
-                                                                    {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : 'Open Shift'}
-                                                                </div>
-                                                                {!isAssigned && (
-                                                                    <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
-                                                                        {availabilityResponses.filter(r => r.date === dayStr).length} available
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                    {dayShifts.length === 0 && (
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem', display: 'none' }}>
-                                                            No shifts
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                        ))}
                     </div>
-                </>
-            )}
+
+                    {loading ? (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
+                    ) : (
+                        <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                            {/* Empty padding days for alignment */}
+                            {Array.from({ length: firstDayIndex }).map((_, i) => (
+                                <div key={`empty-${i}`} className="calendar-day-cell" style={{ backgroundColor: 'var(--neutral-50)', opacity: 0.5 }}></div>
+                            ))}
+
+                            {daysInMonth.map(day => {
+                                const dayStr = format(day, 'yyyy-MM-dd');
+                                const dayShifts = shifts.filter(s => s.date === dayStr);
+                                const isTodayDay = isSameDay(day, new Date());
+
+                                return (
+                                    <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`} style={{ gridColumn: 'auto' }}>
+                                        <div className="calendar-date-label">
+                                            <span>{format(day, 'd')}</span>
+                                            {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            {dayShifts.map(shift => {
+                                                const isAssigned = !!shift.assigned_to || !!shift.custom_assigned_name;
+                                                const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
+
+                                                return (
+                                                    <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)}>
+                                                        <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                            <span>{shift.title}</span>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleDelete(shift.id); }}
+                                                                style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem' }}
+                                                                title="Delete Shift"
+                                                            >
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        </div>
+                                                        <div style={{ color: 'var(--neutral-600)', marginBottom: '0.2rem', marginTop: '0.2rem', fontSize: '0.7rem' }}>
+                                                            {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.7rem', color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', fontWeight: 600 }}>
+                                                            {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : 'Open Shift'}
+                                                        </div>
+                                                        {!isAssigned && (
+                                                            <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
+                                                                {availabilityResponses.filter(r => r.date === dayStr).length} available
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                            {dayShifts.length === 0 && (
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem', display: 'none' }}>
+                                                    No shifts
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     );
 };

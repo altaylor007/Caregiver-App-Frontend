@@ -1,57 +1,93 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, ChevronLeft } from 'lucide-react';
+import { FileText, ChevronLeft, Download, CheckCircle, Circle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const CaregiverResponsibilitiesPage = () => {
     const { user, profile } = useAuth();
-    const [responsibilities, setResponsibilities] = useState([]);
+    const [documents, setDocuments] = useState([]);
+    const [acknowledgedDocIds, setAcknowledgedDocIds] = useState(new Set());
     const [loading, setLoading] = useState(true);
+    const [acknowledgingId, setAcknowledgingId] = useState(null);
 
-    // Check if the user is an admin; admins always bypass the acknowledgement.
-    // If caregiver, check if they acknowledged. Default to assuming they need to if we don't know yet.
     const isAdmin = profile?.role === 'admin';
-    const [hasAcknowledged, setHasAcknowledged] = useState(isAdmin || profile?.acknowledged_responsibilities === true);
-    const [isAcknowledging, setIsAcknowledging] = useState(false);
-
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (profile) {
-            setHasAcknowledged(profile.role === 'admin' || profile.acknowledged_responsibilities === true);
-        }
-    }, [profile]);
+        const fetchData = async () => {
+            if (!user) return;
+            setLoading(true);
 
-    useEffect(() => {
-        const fetchItems = async () => {
-            const { data } = await supabase
-                .from('responsibilities')
+            // Fetch documents
+            const { data: docs } = await supabase
+                .from('documents')
                 .select('*')
-                .order('last_updated', { ascending: false });
+                .order('created_at', { ascending: false });
 
-            if (data) setResponsibilities(data);
+            if (docs) setDocuments(docs);
+
+            // Fetch acknowledgments for this user
+            const { data: acks } = await supabase
+                .from('document_acknowledgments')
+                .select('document_id')
+                .eq('user_id', user.id);
+
+            if (acks) {
+                const ackSet = new Set(acks.map(a => a.document_id));
+                setAcknowledgedDocIds(ackSet);
+            }
+
             setLoading(false);
         };
 
-        fetchItems();
-    }, []);
+        fetchData();
+    }, [user]);
 
-    const handleAcknowledge = async () => {
-        if (!user) return;
-        setIsAcknowledging(true);
+    const handleAcknowledge = async (docId) => {
+        if (!user || acknowledgingId) return;
+
+        // Admins don't need to acknowledge, but we can let them if they want to test it
+        // However, usually we might just return here if isAdmin, but let's allow it for testing purposes.
+
+        setAcknowledgingId(docId);
+
         const { error } = await supabase
-            .from('users')
-            .update({ acknowledged_responsibilities: true })
-            .eq('id', user.id);
+            .from('document_acknowledgments')
+            .insert([{
+                document_id: docId,
+                user_id: user.id
+            }]);
 
-        setIsAcknowledging(false);
         if (!error) {
-            setHasAcknowledged(true);
+            setAcknowledgedDocIds(prev => {
+                const newSet = new Set(prev);
+                newSet.add(docId);
+                return newSet;
+            });
+
+            // Also update the old 'acknowledged_responsibilities' flag just in case 
+            // other parts of the app still rely on it for general onboarding checks.
+            // We only need to do this once.
+            if (!profile?.acknowledged_responsibilities) {
+                await supabase.from('users').update({ acknowledged_responsibilities: true }).eq('id', user.id);
+            }
         } else {
-            alert("Error saving acknowledgement: " + error.message);
+            // Handle unique constraint violation silently if they somehow double-clicked
+            if (error.code !== '23505') {
+                alert("Error saving acknowledgement: " + error.message);
+            } else {
+                setAcknowledgedDocIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(docId);
+                    return newSet;
+                });
+            }
         }
+        setAcknowledgingId(null);
     };
+
+    const allAcknowledged = documents.length > 0 && documents.every(doc => acknowledgedDocIds.has(doc.id));
 
     return (
         <div>
@@ -64,52 +100,115 @@ const CaregiverResponsibilitiesPage = () => {
 
             <div className="card" style={{ backgroundColor: 'var(--primary-50)', borderLeft: '4px solid var(--primary-500)', marginBottom: '1.5rem' }}>
                 <p className="text-sm">
-                    <strong>Important:</strong> Please review this section regularly. You will receive notifications when these protocols change.
+                    <strong>Important:</strong> Please review this section regularly. You will receive notifications when these protocols change. You must acknowledge each new document.
                 </p>
             </div>
 
+            {!loading && documents.length > 0 && allAcknowledged && !isAdmin && (
+                <div style={{ backgroundColor: 'var(--success-50)', color: 'var(--success-700)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
+                    <CheckCircle size={18} />
+                    You are up to date! All protocols have been acknowledged.
+                </div>
+            )}
+
             {loading ? (
-                <p>Loading responsibilities...</p>
-            ) : responsibilities.length === 0 ? (
+                <p>Loading documents...</p>
+            ) : documents.length === 0 ? (
                 <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
                     <p className="text-neutral-muted">No protocols have been posted yet.</p>
                 </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {responsibilities.map(item => (
-                        <div key={item.id} className="card">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                <FileText size={18} className="text-primary" />
-                                <h3 style={{ fontSize: '1.125rem', margin: 0 }}>{item.title}</h3>
-                            </div>
-                            <p className="text-sm text-neutral-700" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                                {item.description}
-                            </p>
-                            <p className="text-xs text-neutral-muted" style={{ marginTop: '0.75rem', borderTop: '1px solid var(--neutral-100)', paddingTop: '0.5rem' }}>
-                                Last updated: {new Date(item.last_updated).toLocaleDateString()}
-                            </p>
-                        </div>
-                    ))}
-                </div>
-            )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {documents.map(item => {
+                        const isAcked = acknowledgedDocIds.has(item.id);
 
-            {!hasAcknowledged && responsibilities.length > 0 && (
-                <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem', border: '2px dashed var(--primary-500)', marginTop: '2rem', backgroundColor: 'var(--primary-50)' }}>
-                    <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: 'var(--primary-200)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
-                        <FileText size={32} />
-                    </div>
-                    <h3 style={{ marginBottom: '1rem', fontSize: '1.25rem' }}>Acknowledge Responsibilities</h3>
-                    <p className="text-neutral-600" style={{ marginBottom: '2rem', lineHeight: '1.6' }}>
-                        By clicking below, you confirm that you have read, understood, and agree to the standard operating procedures and responsibilities listed above.
-                    </p>
-                    <button
-                        onClick={handleAcknowledge}
-                        disabled={isAcknowledging}
-                        className="btn btn-primary"
-                        style={{ width: '100%', maxWidth: 300, margin: '0 auto' }}
-                    >
-                        {isAcknowledging ? 'Processing...' : 'I Acknowledge & Agree'}
-                    </button>
+                        return (
+                            <div key={item.id} className="card" style={{
+                                border: isAcked ? '1px solid var(--neutral-200)' : '2px solid var(--warning-400)',
+                                position: 'relative',
+                                overflow: 'hidden'
+                            }}>
+                                {/* Status Indicator Strip */}
+                                {!isAcked && !isAdmin && (
+                                    <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '4px', backgroundColor: 'var(--warning-500)' }} />
+                                )}
+                                {isAcked && !isAdmin && (
+                                    <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '4px', backgroundColor: 'var(--success-500)' }} />
+                                )}
+
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                    <div style={{
+                                        width: 40, height: 40,
+                                        borderRadius: 'var(--radius-md)',
+                                        backgroundColor: 'var(--primary-50)',
+                                        color: 'var(--primary-600)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        flexShrink: 0
+                                    }}>
+                                        <FileText size={20} />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <h3 style={{ fontSize: '1.125rem', margin: '0 0 0.25rem 0' }}>{item.title}</h3>
+                                        <p className="text-xs text-neutral-muted" style={{ margin: 0 }}>
+                                            Updated: {new Date(item.updated_at).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <p className="text-sm text-neutral-700" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', marginBottom: '1rem' }}>
+                                    {item.description}
+                                </p>
+
+                                {item.file_url && (
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <a
+                                            href={item.file_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn btn-outline text-sm"
+                                            style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', width: '100%', justifyContent: 'center', backgroundColor: 'var(--neutral-50)' }}
+                                        >
+                                            <Download size={16} /> Open Attached Document
+                                        </a>
+                                    </div>
+                                )}
+
+                                {/* Acknowledgment Area */}
+                                {!isAdmin && (
+                                    <div style={{
+                                        borderTop: '1px solid var(--neutral-100)',
+                                        paddingTop: '1rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '1rem'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            {isAcked ? (
+                                                <CheckCircle size={20} className="text-success" />
+                                            ) : (
+                                                <Circle size={20} className="text-warning-500" />
+                                            )}
+                                            <span style={{ fontSize: '0.875rem', fontWeight: isAcked ? 500 : 600, color: isAcked ? 'var(--neutral-600)' : 'var(--warning-700)' }}>
+                                                {isAcked ? 'Acknowledged' : 'Action Required: Please read and acknowledge'}
+                                            </span>
+                                        </div>
+
+                                        {!isAcked && (
+                                            <button
+                                                onClick={() => handleAcknowledge(item.id)}
+                                                disabled={acknowledgingId === item.id}
+                                                className="btn btn-primary text-sm"
+                                                style={{ whiteSpace: 'nowrap' }}
+                                            >
+                                                {acknowledgingId === item.id ? 'Processing...' : 'Acknowledge'}
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -117,3 +216,4 @@ const CaregiverResponsibilitiesPage = () => {
 };
 
 export default CaregiverResponsibilitiesPage;
+
