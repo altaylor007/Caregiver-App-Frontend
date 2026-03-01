@@ -89,10 +89,10 @@ const ProfilePage = () => {
             </div>
 
             <div className="card">
-                <h3 style={{ marginBottom: '1rem' }}>Responsibilities List</h3>
-                <Link to="/responsibilities" style={{ textDecoration: 'none' }}>
+                <h3 style={{ marginBottom: '1rem' }}>Documents List</h3>
+                <Link to="/documents" style={{ textDecoration: 'none' }}>
                     <button className="btn btn-outline" style={{ width: '100%', justifyContent: 'space-between' }}>
-                        View Care Plan & Protocols
+                        View Documents
                         <span>→</span>
                     </button>
                 </Link>

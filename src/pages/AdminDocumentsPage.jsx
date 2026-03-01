@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Plus, Edit2, Trash2, FileText, Download, CheckCircle, Clock } from 'lucide-react';
 
-const AdminResponsibilitiesPage = () => {
+const AdminDocumentsPage = () => {
     const [documents, setDocuments] = useState([]);
     const [acknowledgments, setAcknowledgments] = useState({});
     const [loading, setLoading] = useState(true);
@@ -17,6 +17,7 @@ const AdminResponsibilitiesPage = () => {
     const [existingFileName, setExistingFileName] = useState(null);
     const [formError, setFormError] = useState('');
     const [uploading, setUploading] = useState(false);
+    const [requiresAcknowledgment, setRequiresAcknowledgment] = useState(true);
 
     const fetchData = async () => {
         setLoading(true);
@@ -69,6 +70,7 @@ const AdminResponsibilitiesPage = () => {
         setFile(null);
         setExistingFileUrl(null);
         setExistingFileName(null);
+        setRequiresAcknowledgment(true);
     };
 
     const openEditForm = (item) => {
@@ -79,6 +81,7 @@ const AdminResponsibilitiesPage = () => {
         setFile(null);
         setExistingFileUrl(item.file_url);
         setExistingFileName(item.file_name);
+        setRequiresAcknowledgment(item.requires_acknowledgment ?? true);
     };
 
     const cancelEdit = () => {
@@ -89,6 +92,7 @@ const AdminResponsibilitiesPage = () => {
         setFile(null);
         setExistingFileUrl(null);
         setExistingFileName(null);
+        setRequiresAcknowledgment(true);
         setFormError('');
     };
 
@@ -141,6 +145,7 @@ const AdminResponsibilitiesPage = () => {
                 file_url: fileUrl,
                 file_name: fileName,
                 file_type: fileType,
+                requires_acknowledgment: requiresAcknowledgment,
                 updated_at: new Date().toISOString()
             }).eq('id', currentId);
             error = res.error;
@@ -151,9 +156,25 @@ const AdminResponsibilitiesPage = () => {
                 description,
                 file_url: fileUrl,
                 file_name: fileName,
-                file_type: fileType
+                file_type: fileType,
+                requires_acknowledgment: requiresAcknowledgment
             }]);
             error = res.error;
+
+            // Dispatch Notifications to all caregivers if this is a new document
+            if (!error) {
+                const { data: users } = await supabase.from('users').select('id').eq('role', 'caregiver');
+                if (users && users.length > 0) {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    const notifications = users.map(u => ({
+                        user_id: u.id,
+                        actor_id: user.id,
+                        type: 'document',
+                        content: `A new document "${title}" has been uploaded.`
+                    }));
+                    await supabase.from('notifications').insert(notifications);
+                }
+            }
         }
 
         setUploading(false);
@@ -182,7 +203,7 @@ const AdminResponsibilitiesPage = () => {
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h2>Documents & Responsibilities</h2>
+                <h2>Documents</h2>
                 {!isEditing && (
                     <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
                         <Plus size={16} /> Add New
@@ -233,6 +254,19 @@ const AdminResponsibilitiesPage = () => {
                             <p className="text-xs text-neutral-500" style={{ marginTop: '0.25rem' }}>
                                 Upload a new file to {existingFileUrl ? 'replace the existing one' : 'attach to this document'}.
                             </p>
+                        </div>
+
+                        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+                            <input
+                                type="checkbox"
+                                id="requiresAck"
+                                checked={requiresAcknowledgment}
+                                onChange={(e) => setRequiresAcknowledgment(e.target.checked)}
+                                style={{ width: '1.25rem', height: '1.25rem' }}
+                            />
+                            <label htmlFor="requiresAck" className="form-label" style={{ marginBottom: 0 }}>
+                                Requires caregivers to acknowledge this document
+                            </label>
                         </div>
 
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
@@ -295,36 +329,38 @@ const AdminResponsibilitiesPage = () => {
                                 )}
 
                                 {/* Acknowledgments Section */}
-                                <div style={{ borderTop: '1px solid var(--neutral-100)', paddingTop: '1rem' }}>
-                                    <h4 style={{ fontSize: '0.875rem', color: 'var(--neutral-600)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <CheckCircle size={14} className="text-success" />
-                                        Acknowledgments ({itemAcks.length})
-                                    </h4>
+                                {item.requires_acknowledgment && (
+                                    <div style={{ borderTop: '1px solid var(--neutral-100)', paddingTop: '1rem' }}>
+                                        <h4 style={{ fontSize: '0.875rem', color: 'var(--neutral-600)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <CheckCircle size={14} className="text-success" />
+                                            Acknowledgments ({itemAcks.length})
+                                        </h4>
 
-                                    {itemAcks.length === 0 ? (
-                                        <p className="text-xs text-neutral-muted" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                            <Clock size={12} /> No caregivers have acknowledged this yet.
-                                        </p>
-                                    ) : (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                            {itemAcks.map((ack, idx) => (
-                                                <div key={idx} style={{
-                                                    fontSize: '0.75rem',
-                                                    backgroundColor: 'var(--success-50)',
-                                                    color: 'var(--success-700)',
-                                                    padding: '0.25rem 0.5rem',
-                                                    borderRadius: '9999px',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '0.25rem',
-                                                    border: '1px solid var(--success-200)'
-                                                }}>
-                                                    {ack.userName}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                        {itemAcks.length === 0 ? (
+                                            <p className="text-xs text-neutral-muted" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                <Clock size={12} /> No caregivers have acknowledged this yet.
+                                            </p>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                                {itemAcks.map((ack, idx) => (
+                                                    <div key={idx} style={{
+                                                        fontSize: '0.75rem',
+                                                        backgroundColor: 'var(--success-50)',
+                                                        color: 'var(--success-700)',
+                                                        padding: '0.25rem 0.5rem',
+                                                        borderRadius: '9999px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.25rem',
+                                                        border: '1px solid var(--success-200)'
+                                                    }}>
+                                                        {ack.userName}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 <p className="text-xs text-neutral-muted" style={{ margin: 0 }}>
                                     Last updated: {new Date(item.updated_at).toLocaleDateString()}
@@ -338,5 +374,5 @@ const AdminResponsibilitiesPage = () => {
     );
 };
 
-export default AdminResponsibilitiesPage;
+export default AdminDocumentsPage;
 

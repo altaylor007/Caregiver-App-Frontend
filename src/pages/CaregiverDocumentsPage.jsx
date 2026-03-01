@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { FileText, ChevronLeft, Download, CheckCircle, Circle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const CaregiverResponsibilitiesPage = () => {
+const CaregiverDocumentsPage = () => {
     const { user, profile } = useAuth();
     const [documents, setDocuments] = useState([]);
     const [acknowledgedDocIds, setAcknowledgedDocIds] = useState(new Set());
@@ -87,7 +87,7 @@ const CaregiverResponsibilitiesPage = () => {
         setAcknowledgingId(null);
     };
 
-    const allAcknowledged = documents.length > 0 && documents.every(doc => acknowledgedDocIds.has(doc.id));
+    const allAcknowledged = documents.filter(d => d.requires_acknowledgment).every(doc => acknowledgedDocIds.has(doc.id));
 
     return (
         <div>
@@ -95,16 +95,16 @@ const CaregiverResponsibilitiesPage = () => {
                 <button onClick={() => navigate(-1)} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
                     <ChevronLeft size={24} />
                 </button>
-                <h2 style={{ margin: 0 }}>Care Plan & Protocols</h2>
+                <h2 style={{ margin: 0 }}>Documents</h2>
             </div>
 
             <div className="card" style={{ backgroundColor: 'var(--primary-50)', borderLeft: '4px solid var(--primary-500)', marginBottom: '1.5rem' }}>
                 <p className="text-sm">
-                    <strong>Important:</strong> Please review this section regularly. You will receive notifications when these protocols change. You must acknowledge each new document.
+                    <strong>Important:</strong> Please review any documents below that require acknowledgment. You will receive a notification when new documents are uploaded.
                 </p>
             </div>
 
-            {!loading && documents.length > 0 && allAcknowledged && !isAdmin && (
+            {!loading && documents.filter(d => d.requires_acknowledgment).length > 0 && allAcknowledged && !isAdmin && (
                 <div style={{ backgroundColor: 'var(--success-50)', color: 'var(--success-700)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
                     <CheckCircle size={18} />
                     You are up to date! All protocols have been acknowledged.
@@ -115,7 +115,7 @@ const CaregiverResponsibilitiesPage = () => {
                 <p>Loading documents...</p>
             ) : documents.length === 0 ? (
                 <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
-                    <p className="text-neutral-muted">No protocols have been posted yet.</p>
+                    <p className="text-neutral-muted">No documents have been posted yet.</p>
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -124,15 +124,15 @@ const CaregiverResponsibilitiesPage = () => {
 
                         return (
                             <div key={item.id} className="card" style={{
-                                border: isAcked ? '1px solid var(--neutral-200)' : '2px solid var(--warning-400)',
+                                border: (item.requires_acknowledgment && !isAcked) ? '2px solid var(--warning-400)' : '1px solid var(--neutral-200)',
                                 position: 'relative',
                                 overflow: 'hidden'
                             }}>
                                 {/* Status Indicator Strip */}
-                                {!isAcked && !isAdmin && (
+                                {item.requires_acknowledgment && !isAcked && !isAdmin && (
                                     <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '4px', backgroundColor: 'var(--warning-500)' }} />
                                 )}
-                                {isAcked && !isAdmin && (
+                                {item.requires_acknowledgment && isAcked && !isAdmin && (
                                     <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '4px', backgroundColor: 'var(--success-500)' }} />
                                 )}
 
@@ -174,7 +174,7 @@ const CaregiverResponsibilitiesPage = () => {
                                 )}
 
                                 {/* Acknowledgment Area */}
-                                {!isAdmin && (
+                                {!isAdmin && item.requires_acknowledgment && (
                                     <div style={{
                                         borderTop: '1px solid var(--neutral-100)',
                                         paddingTop: '1rem',
@@ -215,5 +215,5 @@ const CaregiverResponsibilitiesPage = () => {
     );
 };
 
-export default CaregiverResponsibilitiesPage;
+export default CaregiverDocumentsPage;
 

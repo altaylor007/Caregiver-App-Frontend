@@ -3,11 +3,11 @@ import MainLayout from './layouts/MainLayout';
 import DashboardPage from './pages/DashboardPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminCaregiversPage from './pages/AdminCaregiversPage';
-import AdminResponsibilitiesPage from './pages/AdminResponsibilitiesPage';
+import AdminDocumentsPage from './pages/AdminDocumentsPage';
 import AdminSchedulePage from './pages/AdminSchedulePage';
 import AdminReportsPage from './pages/AdminReportsPage';
 import AdminPayrollPage from './pages/AdminPayrollPage';
-import CaregiverResponsibilitiesPage from './pages/CaregiverResponsibilitiesPage';
+import CaregiverDocumentsPage from './pages/CaregiverDocumentsPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import SchedulePage from './pages/SchedulePage';
 import CaregiverDirectoryPage from './pages/CaregiverDirectoryPage';
@@ -50,13 +50,13 @@ function App() {
             <Route path="schedule" element={<SchedulePage />} />
             <Route path="messages" element={<MessagesPage />} />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="responsibilities" element={<CaregiverResponsibilitiesPage />} />
+            <Route path="documents" element={<CaregiverDocumentsPage />} />
             <Route path="availability" element={<AvailabilityPage />} />
             <Route path="directory" element={<CaregiverDirectoryPage />} />
 
             {/* Admin specific sub-pages */}
             <Route path="admin/caregivers" element={<AdminRoute><AdminCaregiversPage /></AdminRoute>} />
-            <Route path="admin/responsibilities" element={<AdminRoute><AdminResponsibilitiesPage /></AdminRoute>} />
+            <Route path="admin/documents" element={<AdminRoute><AdminDocumentsPage /></AdminRoute>} />
             <Route path="admin/schedule" element={<AdminRoute><AdminSchedulePage /></AdminRoute>} />
             <Route path="admin/reports" element={<AdminRoute><AdminReportsPage /></AdminRoute>} />
             <Route path="admin/payroll" element={<AdminRoute><AdminPayrollPage /></AdminRoute>} />

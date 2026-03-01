@@ -48,11 +48,15 @@ const MainLayout = () => {
         return () => supabase.removeChannel(notifSub);
     }, [user]);
 
-    const markAsRead = async (notifId) => {
+    const markAsRead = async (notifId, notifType) => {
         await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
         setNotifications(prev => prev.filter(n => n.id !== notifId));
         setShowNotifications(false);
-        navigate('/messages'); // Take them to messages where they were tagged
+        if (notifType === 'document') {
+            navigate('/documents');
+        } else {
+            navigate('/messages'); // Take them to messages where they were tagged
+        }
     };
     return (
         <div className="page-container">
@@ -98,12 +102,12 @@ const MainLayout = () => {
                                 notifications.map(n => (
                                     <div
                                         key={n.id}
-                                        onClick={() => markAsRead(n.id)}
+                                        onClick={() => markAsRead(n.id, n.type)}
                                         style={{ padding: '0.5rem', cursor: 'pointer', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--primary-50)' }}
                                     >
                                         <p className="text-sm">
                                             <span style={{ fontWeight: 600 }}>{n.actor?.full_name || 'Someone'}</span>
-                                            {n.type === 'mention' ? ' tagged you in a message.' : ' updated your responsibilities.'}
+                                            {n.type === 'mention' ? ' tagged you in a message.' : ' uploaded a new document.'}
                                         </p>
                                     </div>
                                 ))
