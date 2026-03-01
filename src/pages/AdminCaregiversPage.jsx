@@ -92,9 +92,8 @@ const AdminCaregiversPage = () => {
 
     const togglePayroll = async (id, currentPayrollStatus) => {
         const newPayrollStatus = !currentPayrollStatus;
-        const action = newPayrollStatus ? 'enable' : 'disable';
 
-        if (!window.confirm(`Are you sure you want to ${action} payroll tracking for this caregiver?`)) return;
+        // Optimistically update UI (optional, but skipping here to stick to fetch logic)
 
         const { error } = await supabase
             .from('users')
@@ -221,16 +220,30 @@ const AdminCaregiversPage = () => {
                                         </div>
                                         <button
                                             onClick={() => togglePayroll(cg.id, cg.payroll_enabled)}
-                                            className="btn"
                                             style={{
-                                                padding: '0.2rem 0.5rem',
-                                                fontSize: '0.75rem',
-                                                backgroundColor: cg.payroll_enabled ? 'var(--success-50)' : 'var(--neutral-100)',
-                                                color: cg.payroll_enabled ? 'var(--success-700)' : 'var(--neutral-600)',
-                                                border: `1px solid ${cg.payroll_enabled ? 'var(--success-200)' : 'var(--neutral-300)'}`
+                                                width: '40px',
+                                                height: '24px',
+                                                backgroundColor: cg.payroll_enabled ? 'var(--success-500)' : 'var(--neutral-300)',
+                                                borderRadius: '12px',
+                                                position: 'relative',
+                                                cursor: 'pointer',
+                                                transition: 'background-color 0.2s',
+                                                border: 'none',
+                                                padding: 0
                                             }}
+                                            aria-label="Toggle Payroll"
                                         >
-                                            {cg.payroll_enabled ? 'Enabled' : 'Disabled'}
+                                            <div style={{
+                                                width: '20px',
+                                                height: '20px',
+                                                backgroundColor: 'white',
+                                                borderRadius: '50%',
+                                                position: 'absolute',
+                                                top: '2px',
+                                                left: cg.payroll_enabled ? '18px' : '2px',
+                                                transition: 'left 0.2s',
+                                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                            }} />
                                         </button>
                                     </div>
                                 </div>
