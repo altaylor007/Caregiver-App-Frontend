@@ -690,9 +690,8 @@ const AdminSchedulePage = () => {
                     </div>
                 </div>
             </>
-        )
-    }
-        </div >
+            )}
+        </div>
     );
 };
 
