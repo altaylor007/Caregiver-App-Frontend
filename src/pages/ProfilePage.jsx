@@ -7,9 +7,12 @@ const ProfilePage = () => {
     const { user, profile, signOut } = useAuth();
     const [phone, setPhone] = useState(profile?.phone || '');
     const [isSaving, setIsSaving] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
 
     useEffect(() => {
         if (profile?.phone) setPhone(profile.phone);
+        if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
     }, [profile]);
 
     const handleUpdatePhone = async () => {
@@ -23,14 +26,64 @@ const ProfilePage = () => {
         }
     };
 
+    const handleImageUpload = async (event) => {
+        try {
+            setIsUploading(true);
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const fileExt = file.name.split('.').pop();
+            const filePath = `${user.id}/${Math.random()}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(filePath, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+
+            const { error: updateError } = await supabase.from('users').update({ avatar_url: data.publicUrl }).eq('id', user.id);
+            if (updateError) throw updateError;
+
+            setAvatarUrl(data.publicUrl);
+            alert('Avatar updated successfully!');
+        } catch (error) {
+            alert('Error uploading avatar: ' + error.message);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
     return (
         <div>
             <h2 style={{ marginBottom: '1rem' }}>Profile & Settings</h2>
 
             <div className="card" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
-                <div style={{ width: 80, height: 80, borderRadius: '50%', backgroundColor: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '2rem', margin: '0 auto 1rem auto' }}>
-                    {user?.email?.charAt(0).toUpperCase() || 'C'}
+                <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 1rem auto' }}>
+                    {avatarUrl ? (
+                        <img
+                            src={avatarUrl}
+                            alt="Profile Avatar"
+                            style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                        />
+                    ) : (
+                        <div style={{ width: '100%', height: '100%', borderRadius: '50%', backgroundColor: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '2rem' }}>
+                            {user?.email?.charAt(0).toUpperCase() || 'C'}
+                        </div>
+                    )}
+                    <label style={{
+                        position: 'absolute', bottom: 0, right: -5,
+                        backgroundColor: 'var(--primary-600)', color: 'white',
+                        borderRadius: '50%', width: 28, height: 28,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', boxShadow: 'var(--shadow-sm)'
+                    }}>
+                        <span style={{ fontSize: '1rem' }}>+</span>
+                        <input type="file" style={{ display: 'none' }} accept="image/*" onChange={handleImageUpload} disabled={isUploading} />
+                    </label>
                 </div>
+                {isUploading && <p className="text-xs text-primary-600" style={{ marginTop: '-0.5rem', marginBottom: '0.5rem' }}>Uploading...</p>}
                 <h3 className="text-sm">Caregiver Account</h3>
                 <p className="text-neutral-muted text-sm">{user?.email}</p>
             </div>

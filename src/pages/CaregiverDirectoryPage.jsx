@@ -12,7 +12,7 @@ const CaregiverDirectoryPage = () => {
             // Fetch all active users (we can display both admins and caregivers, or just caregivers)
             const { data, error } = await supabase
                 .from('users')
-                .select('id, full_name, email, role, phone')
+                .select('id, full_name, email, role, phone, avatar_url')
                 .eq('status', 'active')
                 .order('full_name', { ascending: true });
 
@@ -37,9 +37,13 @@ const CaregiverDirectoryPage = () => {
                         <div key={person.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem' }}>
                             <div style={{
                                 width: 50, height: 50, borderRadius: '50%', backgroundColor: 'var(--primary-100)', color: 'var(--primary-700)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 'bold'
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 'bold', overflow: 'hidden'
                             }}>
-                                {person.full_name ? person.full_name.charAt(0).toUpperCase() : <UserIcon size={24} />}
+                                {person.avatar_url ? (
+                                    <img src={person.avatar_url} alt={person.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    person.full_name ? person.full_name.charAt(0).toUpperCase() : <UserIcon size={24} />
+                                )}
                             </div>
 
                             <div style={{ flex: 1 }}>

@@ -95,7 +95,7 @@ const MessagesPage = () => {
             .from('messages')
             .select(`
                 *, 
-                users(full_name, role),
+                users(full_name, role, avatar_url),
                 message_reactions(id, emoji, user_id)
             `)
             .eq('topic_id', topicId)
@@ -328,9 +328,14 @@ const MessagesPage = () => {
                                                 width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
                                                 backgroundColor: isAdmin ? 'var(--primary-600)' : 'var(--secondary-100)',
                                                 color: isAdmin ? 'white' : 'var(--secondary-700)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.875rem'
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.875rem',
+                                                overflow: 'hidden'
                                             }}>
-                                                {msg.users?.full_name?.charAt(0).toUpperCase() || '?'}
+                                                {msg.users?.avatar_url ? (
+                                                    <img src={msg.users.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    msg.users?.full_name?.charAt(0).toUpperCase() || '?'
+                                                )}
                                             </div>
 
                                             <div style={{ maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>

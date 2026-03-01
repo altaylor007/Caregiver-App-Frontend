@@ -17,7 +17,7 @@ const AdminCaregiversPage = () => {
         setLoading(true);
         const { data, error } = await supabase
             .from('users')
-            .select('id, full_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled')
+            .select('id, full_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled, avatar_url')
             .eq('role', 'caregiver')
             .order('created_at', { ascending: false });
 
@@ -180,6 +180,15 @@ const AdminCaregiversPage = () => {
                         <div key={cg.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', margin: 0, opacity: cg.status === 'inactive' ? 0.6 : 1 }}>
                             <div style={{ flexGrow: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: 'var(--neutral-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                        {cg.avatar_url ? (
+                                            <img src={cg.avatar_url} alt={cg.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <span style={{ fontWeight: 'bold', color: 'var(--neutral-500)', fontSize: '0.875rem' }}>
+                                                {cg.full_name?.charAt(0).toUpperCase() || '?'}
+                                            </span>
+                                        )}
+                                    </div>
                                     <p style={{ fontWeight: 600 }}>{cg.full_name || 'Unnamed Caregiver'}</p>
                                     {cg.status === 'inactive' && (
                                         <span style={{ fontSize: '0.7rem', backgroundColor: 'var(--neutral-200)', color: 'var(--neutral-700)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Inactive</span>
