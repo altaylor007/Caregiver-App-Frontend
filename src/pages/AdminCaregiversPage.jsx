@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, UserX, UserCheck, Mail } from 'lucide-react';
+import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy } from 'lucide-react';
 
 const AdminCaregiversPage = () => {
     const [caregivers, setCaregivers] = useState([]);
@@ -31,20 +31,45 @@ const AdminCaregiversPage = () => {
         fetchCaregivers();
     }, []);
 
-    const handleAddCaregiver = async (e) => {
-        e.preventDefault();
-
-        // Construct the signup URL based on window.location
+    const generateMessage = () => {
         const signupUrl = `${window.location.origin}/auth`;
+        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nPlease click the link below to create your account. During sign up, you will be asked to provide your phone number. Once logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nSign up here: ${signupUrl}\n\nThank you!`;
+    };
 
+    const handleGmail = () => {
+        if (!newEmail) { setErrorMsg("Please enter an email address"); return; }
         const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
-        const body = encodeURIComponent(`Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nPlease click the link below to create your account. During sign up, you will be asked to provide your phone number. Once logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nSign up here: ${signupUrl}\n\nThank you!`);
-
-        // Open the user's default email client
-        window.location.href = `mailto:${newEmail}?subject=${subject}&body=${body}`;
-
+        const body = encodeURIComponent(generateMessage());
+        window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${newEmail}&su=${subject}&body=${body}`, '_blank');
+        setSuccessMsg("Draft created in Gmail!");
+        setErrorMsg('');
         setNewEmail('');
+    };
+
+    const handleDefaultMail = () => {
+        if (!newEmail) { setErrorMsg("Please enter an email address"); return; }
+        const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
+        const body = encodeURIComponent(generateMessage());
+        window.location.href = `mailto:${newEmail}?subject=${subject}&body=${body}`;
         setSuccessMsg("Email drafted! Please send it from your email client.");
+        setErrorMsg('');
+        setNewEmail('');
+    };
+
+    const handleSMS = () => {
+        if (!newEmail) { setErrorMsg("Please enter a phone number"); return; }
+        const body = encodeURIComponent(generateMessage());
+        window.location.href = `sms:${newEmail}?&body=${body}`;
+        setSuccessMsg("SMS draft created! Please send it from your messaging app.");
+        setErrorMsg('');
+        setNewEmail('');
+    };
+
+    const handleCopy = () => {
+        const body = generateMessage();
+        navigator.clipboard.writeText(body);
+        setSuccessMsg("Invitation copied to clipboard!");
+        setErrorMsg('');
     };
 
     const toggleStatus = async (id, currentStatus) => {
@@ -108,25 +133,37 @@ const AdminCaregiversPage = () => {
                 )}
 
                 <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                    Send an email invitation with a direct link to sign up.
+                    Send an invitation link via email or text message, or simply copy the link.
                 </p>
 
-                <form onSubmit={handleAddCaregiver}>
+                <div style={{ marginBottom: '1.5rem' }}>
                     <div className="form-group">
-                        <label className="form-label">Email Address</label>
+                        <label className="form-label">Email Address or Phone Number</label>
                         <input
-                            type="email"
-                            required
+                            type="text"
                             className="form-input"
-                            placeholder="caregiver@email.com"
+                            placeholder="Email or phone number"
                             value={newEmail}
                             onChange={(e) => setNewEmail(e.target.value)}
                         />
                     </div>
-                    <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ width: '100%', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                        <Mail size={18} /> Send Invite Email
-                    </button>
-                </form>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <button type="button" onClick={handleGmail} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <Mail size={18} /> Open in Gmail
+                        </button>
+                        <button type="button" onClick={handleDefaultMail} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <Mail size={18} /> Default Mail App
+                        </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                        <button type="button" onClick={handleSMS} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <MessageSquare size={18} /> Send text (SMS)
+                        </button>
+                        <button type="button" onClick={handleCopy} className="btn btn-primary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <Copy size={18} /> Copy Invite Message Only
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Team Roster ({caregivers.length})</h3>

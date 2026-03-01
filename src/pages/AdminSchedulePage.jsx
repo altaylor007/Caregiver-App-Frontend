@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Plus, Edit2, Trash2, Send, Check } from 'lucide-react';
-import { format, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameDay } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
 const AdminSchedulePage = () => {
     const [shifts, setShifts] = useState([]);
     const [caregivers, setCaregivers] = useState([]);
     const [availabilityResponses, setAvailabilityResponses] = useState([]);
+    const [shiftTemplates, setShiftTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
+    const [currentDate, setCurrentDate] = useState(new Date());
 
     // Form State
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -36,9 +37,10 @@ const AdminSchedulePage = () => {
     const fetchData = async () => {
         setLoading(true);
 
-        const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
-        const startDateStr = format(currentWeekStart, 'yyyy-MM-dd');
-        const endDateStr = format(weekEnd, 'yyyy-MM-dd');
+        const monthStart = startOfMonth(currentDate);
+        const monthEnd = endOfMonth(currentDate);
+        const startDateStr = format(monthStart, 'yyyy-MM-dd');
+        const endDateStr = format(monthEnd, 'yyyy-MM-dd');
 
         // Fetch shifts for this week
         const shiftsData = await supabase
@@ -63,16 +65,23 @@ const AdminSchedulePage = () => {
             .lte('date', endDateStr)
             .neq('status', 'unavailable');
 
+        // Fetch shift templates
+        const templatesData = await supabase
+            .from('shift_templates')
+            .select('*')
+            .order('created_at', { ascending: true });
+
         if (shiftsData.data) setShifts(shiftsData.data);
         if (caregiversData.data) setCaregivers(caregiversData.data);
         if (availabilityData.data) setAvailabilityResponses(availabilityData.data);
+        if (templatesData.data) setShiftTemplates(templatesData.data);
 
         setLoading(false);
     };
 
     useEffect(() => {
         fetchData();
-    }, [currentWeekStart]);
+    }, [currentDate]);
 
     const openNewForm = () => {
         setIsFormOpen(true);
@@ -198,6 +207,41 @@ const AdminSchedulePage = () => {
         if (!error) fetchData();
     };
 
+    const handleSaveAsTemplate = async () => {
+        if (!title.trim() || !startTime || !endTime) {
+            setFormError('Please provide a Title, Start Time, and End Time to save a template.');
+            return;
+        }
+
+        const payload = {
+            title: title.trim(),
+            start_time: startTime + ':00',
+            end_time: endTime + ':00'
+        };
+
+        const { error } = await supabase.from('shift_templates').insert([payload]);
+        if (error) {
+            setFormError('Failed to save template: ' + error.message);
+        } else {
+            // Refresh templates without closing the form
+            const templatesData = await supabase
+                .from('shift_templates')
+                .select('*')
+                .order('created_at', { ascending: true });
+            if (templatesData.data) setShiftTemplates(templatesData.data);
+        }
+    };
+
+    const handleDeleteTemplate = async (id) => {
+        if (!window.confirm("Delete this template?")) return;
+        const { error } = await supabase.from('shift_templates').delete().eq('id', id);
+        if (!error) {
+            setShiftTemplates(prev => prev.filter(t => t.id !== id));
+        } else {
+            setFormError('Failed to delete template: ' + error.message);
+        }
+    };
+
     const handleSendRequest = async (e) => {
         e.preventDefault();
         setRequesting(true);
@@ -217,16 +261,16 @@ const AdminSchedulePage = () => {
         setRequesting(false);
     };
 
-    const nextWeek = () => setCurrentWeekStart(addWeeks(currentWeekStart, 1));
-    const prevWeek = () => setCurrentWeekStart(subWeeks(currentWeekStart, 1));
-    const goToToday = () => setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+    const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
+    const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+    const goToToday = () => setCurrentDate(new Date());
 
-    // Generate 7 days for the current week grid
-    const weekDays = Array.from({ length: 7 }).map((_, i) => {
-        const d = new Date(currentWeekStart);
-        d.setDate(d.getDate() + i);
-        return d;
-    });
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+    // 0 is Sunday. We'll start calendar on Sunday.
+    const firstDayIndex = monthStart.getDay();
 
     return (
         <div>
@@ -235,13 +279,16 @@ const AdminSchedulePage = () => {
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     {!isFormOpen && (
                         <>
-                            <button onClick={prevWeek} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                            <button onClick={prevMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
                                 <ChevronLeft size={20} />
                             </button>
+                            <h3 style={{ margin: 0, minWidth: '150px', textAlign: 'center', fontSize: '1.2rem' }}>
+                                {format(currentDate, 'MMMM yyyy')}
+                            </h3>
                             <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
                                 Today
                             </button>
-                            <button onClick={nextWeek} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                            <button onClick={nextMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
                                 <ChevronRight size={20} />
                             </button>
                             <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
@@ -266,29 +313,36 @@ const AdminSchedulePage = () => {
                     )}
 
                     <form onSubmit={handleSubmit}>
-                        <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <button
-                                type="button"
-                                className="btn btn-outline text-xs"
-                                onClick={() => {
-                                    setTitle('Morning Shift');
-                                    setStartTime('09:30');
-                                    setEndTime('15:30');
-                                }}
-                            >
-                                Template: Morning (9:30am-3:30pm)
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn-outline text-xs"
-                                onClick={() => {
-                                    setTitle('Evening Shift');
-                                    setStartTime('17:30');
-                                    setEndTime('21:30');
-                                }}
-                            >
-                                Template: Evening (5:30pm-9:30pm)
-                            </button>
+                        <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span className="text-sm font-semibold" style={{ marginRight: '0.5rem', color: 'var(--neutral-600)' }}>Templates:</span>
+                            {shiftTemplates.length === 0 && <span className="text-xs text-neutral-500 italic">No templates saved yet.</span>}
+                            {shiftTemplates.map(template => (
+                                <div key={template.id} style={{ display: 'inline-flex', alignItems: 'center' }} className="btn btn-outline text-xs">
+                                    <button
+                                        type="button"
+                                        style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'inherit' }}
+                                        onClick={() => {
+                                            setTitle(template.title);
+                                            // Handle cases where time has seconds
+                                            setStartTime(template.start_time.substring(0, 5));
+                                            setEndTime(template.end_time.substring(0, 5));
+                                        }}
+                                        title={`Use template: ${template.title}`}
+                                    >
+                                        {template.title} ({format(parseISO(`1970-01-01T${template.start_time}`), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time}`), 'h:mma').toLowerCase()})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        title={`Delete ${template.title} template`}
+                                        onClick={() => handleDeleteTemplate(template.id)}
+                                        style={{ background: 'none', border: 'none', marginLeft: '0.5rem', cursor: 'pointer', padding: '0.1rem', display: 'flex', alignItems: 'center', color: 'var(--neutral-400)' }}
+                                        onMouseOver={(e) => e.currentTarget.style.color = 'var(--danger-500)'}
+                                        onMouseOut={(e) => e.currentTarget.style.color = 'var(--neutral-400)'}
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            ))}
                         </div>
 
                         <div className="form-group">
@@ -304,11 +358,11 @@ const AdminSchedulePage = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <div className="form-group">
                                 <label className="form-label">Start Time</label>
-                                <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} required />
+                                <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} step="900" required />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">End Time</label>
-                                <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} required />
+                                <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} step="900" required />
                             </div>
                         </div>
 
@@ -364,9 +418,10 @@ const AdminSchedulePage = () => {
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
-                            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Shift</button>
-                            <button type="button" onClick={closeForm} className="btn btn-outline" style={{ flex: 1 }}>Cancel</button>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+                            <button type="submit" className="btn btn-primary" style={{ flex: 1, minWidth: '150px' }}>Save Shift</button>
+                            <button type="button" onClick={handleSaveAsTemplate} className="btn btn-secondary" style={{ flex: 1, minWidth: '150px' }}>Save as Template</button>
+                            <button type="button" onClick={closeForm} className="btn btn-outline" style={{ flex: 1, minWidth: '100px' }}>Cancel</button>
                         </div>
                     </form>
                 </div>
@@ -423,9 +478,9 @@ const AdminSchedulePage = () => {
                     <div className="calendar-container">
                         <div className="calendar-wrapper">
                             <div className="calendar-row">
-                                {weekDays.map(day => (
-                                    <div key={day.toISOString()} className="calendar-header-cell">
-                                        {format(day, 'EEEE')}
+                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                                    <div key={day} className="calendar-header-cell">
+                                        {day}
                                     </div>
                                 ))}
                             </div>
@@ -433,16 +488,21 @@ const AdminSchedulePage = () => {
                             {loading ? (
                                 <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
                             ) : (
-                                <div className="calendar-row">
-                                    {weekDays.map(day => {
+                                <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                                    {/* Empty padding days for alignment */}
+                                    {Array.from({ length: firstDayIndex }).map((_, i) => (
+                                        <div key={`empty-${i}`} className="calendar-day-cell" style={{ backgroundColor: 'var(--neutral-50)', opacity: 0.5 }}></div>
+                                    ))}
+
+                                    {daysInMonth.map(day => {
                                         const dayStr = format(day, 'yyyy-MM-dd');
                                         const dayShifts = shifts.filter(s => s.date === dayStr);
                                         const isTodayDay = isSameDay(day, new Date());
 
                                         return (
-                                            <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`}>
+                                            <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`} style={{ gridColumn: 'auto' }}>
                                                 <div className="calendar-date-label">
-                                                    <span>{format(day, 'MMM d')}</span>
+                                                    <span>{format(day, 'd')}</span>
                                                     {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
                                                 </div>
 
@@ -478,7 +538,7 @@ const AdminSchedulePage = () => {
                                                         );
                                                     })}
                                                     {dayShifts.length === 0 && (
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem' }}>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem', display: 'none' }}>
                                                             No shifts
                                                         </div>
                                                     )}

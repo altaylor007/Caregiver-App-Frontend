@@ -21,6 +21,7 @@ const MessagesPage = () => {
 
     // Input State
     const [newTopicTitle, setNewTopicTitle] = useState('');
+    const [newTopicMessage, setNewTopicMessage] = useState('');
     const [isCreatingTopic, setIsCreatingTopic] = useState(false);
 
     const [newMessage, setNewMessage] = useState('');
@@ -105,22 +106,40 @@ const MessagesPage = () => {
 
     const handleCreateTopic = async (e) => {
         e.preventDefault();
-        if (!newTopicTitle.trim()) return;
+        if (!newTopicTitle.trim() || !newTopicMessage.trim()) return;
 
         setIsCreatingTopic(true);
-        const { data, error } = await supabase
+        // 1. Create the topic
+        const { data: topicData, error: topicError } = await supabase
             .from('message_topics')
             .insert([{ title: newTopicTitle.trim() }])
             .select()
             .single();
 
-        if (!error && data) {
+        if (topicError || !topicData) {
+            alert("Error creating topic. Make sure you ran the 'team_comm_updates.sql' script in Supabase! Details: " + topicError?.message);
+            setIsCreatingTopic(false);
+            return;
+        }
+
+        // 2. Insert the first message for this topic
+        const { error: msgError } = await supabase
+            .from('messages')
+            .insert([{
+                author_id: user.id,
+                topic_id: topicData.id,
+                content: newTopicMessage.trim()
+            }]);
+
+        if (!msgError) {
             setNewTopicTitle('');
-            setActiveTopic(data);
+            setNewTopicMessage(''); // Clear message input
+            setActiveTopic(topicData);
             setView('messages');
         } else {
-            alert("Error creating topic. Make sure the database schema is updated.");
+            alert("Topic was created, but failed to insert the first message: " + msgError?.message);
         }
+
         setIsCreatingTopic(false);
     };
 
@@ -229,20 +248,30 @@ const MessagesPage = () => {
                 {view === 'topics' && (
                     <>
                         <div style={{ padding: '1rem', borderBottom: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
-                            <form onSubmit={handleCreateTopic} style={{ display: 'flex', gap: '0.5rem' }}>
+                            <form onSubmit={handleCreateTopic} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                 <input
                                     type="text"
                                     className="form-input"
-                                    placeholder="Create new topic..."
-                                    style={{ flex: 1 }}
+                                    placeholder="Topic Title (e.g. Schedule Change)"
                                     value={newTopicTitle}
                                     onChange={(e) => setNewTopicTitle(e.target.value)}
                                     maxLength={50}
                                     required
                                 />
-                                <button type="submit" disabled={isCreatingTopic} className="btn btn-primary" style={{ display: 'flex', gap: '0.25rem' }}>
-                                    <Plus size={16} /> Add Topic
-                                </button>
+                                <textarea
+                                    className="form-input"
+                                    placeholder="First message..."
+                                    rows="2"
+                                    value={newTopicMessage}
+                                    onChange={(e) => setNewTopicMessage(e.target.value)}
+                                    required
+                                    style={{ resize: 'vertical' }}
+                                />
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button type="submit" disabled={isCreatingTopic} className="btn btn-primary" style={{ display: 'flex', gap: '0.25rem' }}>
+                                        <Plus size={16} /> Create Topic
+                                    </button>
+                                </div>
                             </form>
                         </div>
                         <div style={{ flex: 1, overflowY: 'auto' }}>

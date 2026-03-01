@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { format, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, isSameDay } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const SchedulePage = () => {
@@ -9,14 +9,15 @@ const SchedulePage = () => {
     const [shifts, setShifts] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
+    const [currentDate, setCurrentDate] = useState(new Date());
 
     const fetchSchedule = async () => {
         setLoading(true);
 
-        const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
-        const startDateStr = format(currentWeekStart, 'yyyy-MM-dd');
-        const endDateStr = format(weekEnd, 'yyyy-MM-dd');
+        const monthStart = startOfMonth(currentDate);
+        const monthEnd = endOfMonth(currentDate);
+        const startDateStr = format(monthStart, 'yyyy-MM-dd');
+        const endDateStr = format(monthEnd, 'yyyy-MM-dd');
 
         // Fetch user's assigned shifts AND open shifts for this week
         const { data, error } = await supabase
@@ -36,7 +37,7 @@ const SchedulePage = () => {
 
     useEffect(() => {
         if (user) fetchSchedule();
-    }, [user, currentWeekStart]);
+    }, [user, currentDate]);
 
     const handlePickUpShift = async (shift) => {
         if (!window.confirm(`Pick up the ${shift.title} shift on ${format(parseISO(shift.date), 'MMM do')}?`)) return;
@@ -57,29 +58,32 @@ const SchedulePage = () => {
         alert("Shift trading functionality will be implemented in the next module!");
     };
 
-    const nextWeek = () => setCurrentWeekStart(addWeeks(currentWeekStart, 1));
-    const prevWeek = () => setCurrentWeekStart(subWeeks(currentWeekStart, 1));
-    const goToToday = () => setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+    const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
+    const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+    const goToToday = () => setCurrentDate(new Date());
 
-    // Generate 7 days for the current week grid
-    const weekDays = Array.from({ length: 7 }).map((_, i) => {
-        const d = new Date(currentWeekStart);
-        d.setDate(d.getDate() + i);
-        return d;
-    });
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+    // 0 is Sunday. We'll start calendar on Sunday.
+    const firstDayIndex = monthStart.getDay();
 
     return (
         <div style={{ paddingBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <h2 style={{ margin: 0 }}>My Schedule</h2>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button onClick={prevWeek} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                    <button onClick={prevMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
                         <ChevronLeft size={20} />
                     </button>
+                    <h3 style={{ margin: 0, minWidth: '150px', textAlign: 'center', fontSize: '1.2rem' }}>
+                        {format(currentDate, 'MMMM yyyy')}
+                    </h3>
                     <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
                         Today
                     </button>
-                    <button onClick={nextWeek} className="btn btn-outline" style={{ padding: '0.4rem' }}>
+                    <button onClick={nextMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
                         <ChevronRight size={20} />
                     </button>
                 </div>
@@ -93,9 +97,9 @@ const SchedulePage = () => {
             <div className="calendar-container">
                 <div className="calendar-wrapper">
                     <div className="calendar-row">
-                        {weekDays.map(day => (
-                            <div key={day.toISOString()} className="calendar-header-cell">
-                                {format(day, 'EEEE')}
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                            <div key={day} className="calendar-header-cell">
+                                {day}
                             </div>
                         ))}
                     </div>
@@ -103,16 +107,21 @@ const SchedulePage = () => {
                     {loading ? (
                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
                     ) : (
-                        <div className="calendar-row">
-                            {weekDays.map(day => {
+                        <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                            {/* Empty padding days for alignment */}
+                            {Array.from({ length: firstDayIndex }).map((_, i) => (
+                                <div key={`empty-${i}`} className="calendar-day-cell" style={{ backgroundColor: 'var(--neutral-50)', opacity: 0.5 }}></div>
+                            ))}
+
+                            {daysInMonth.map(day => {
                                 const dayStr = format(day, 'yyyy-MM-dd');
                                 const dayShifts = shifts.filter(s => s.date === dayStr);
                                 const isTodayDay = isSameDay(day, new Date());
 
                                 return (
-                                    <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`}>
+                                    <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''}`} style={{ gridColumn: 'auto' }}>
                                         <div className="calendar-date-label">
-                                            <span>{format(day, 'MMM d')}</span>
+                                            <span>{format(day, 'd')}</span>
                                             {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
                                         </div>
 
@@ -141,7 +150,7 @@ const SchedulePage = () => {
                                                 );
                                             })}
                                             {dayShifts.length === 0 && (
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem' }}>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem', display: 'none' }}>
                                                     No shifts
                                                 </div>
                                             )}
