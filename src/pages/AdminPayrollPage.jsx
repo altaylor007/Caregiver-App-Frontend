@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { format, subDays, addDays, parseISO, startOfDay } from 'date-fns';
 import { Calendar, FileText, CheckCircle, Mail, ChevronLeft, ChevronRight, Clock, Users } from 'lucide-react';
 
@@ -292,7 +293,7 @@ const PayrollReportView = () => {
             // Send to each designated contact
             const sendErrors = [];
             for (const contact of validContacts) {
-                const { error: smsError } = await supabase.functions.invoke('send-sms', {
+                const { error: smsError } = await supabaseAdmin.functions.invoke('send-sms', {
                     body: { to: contact.phone, messageBody: smsBody }
                 });
                 if (smsError) sendErrors.push(`${contact.full_name}: ${smsError.message}`);
