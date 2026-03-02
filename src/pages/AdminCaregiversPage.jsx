@@ -33,8 +33,8 @@ const AdminCaregiversPage = () => {
     }, []);
 
     const generateMessage = () => {
-        const signupUrl = `${window.location.origin}/auth`;
-        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nPlease click the link below to create your account. During sign up, you will be asked to provide your phone number. Once logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nSign up here: ${signupUrl}\n\nThank you!`;
+        const authUrl = `${window.location.origin}/auth`;
+        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nAn administrator has created an account for you. You will shortly receive a separate system email from Supabase containing an invitation link. Please click that secure link to log in, and you will be prompted to set your password and provide your phone number.\n\nOnce logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nYou can access the regular login page at any time here: ${authUrl}\n\nThank you!`;
     };
 
     const handleGmail = () => {
