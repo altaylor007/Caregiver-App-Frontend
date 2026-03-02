@@ -11,7 +11,7 @@ const AdminSchedulePage = () => {
         for (let m of [0, 15, 30, 45]) {
             const hh = String(h).padStart(2, '0');
             const mm = String(m).padStart(2, '0');
-            const val = `${hh}:${mm} `;
+            const val = `${hh}:${mm}`;
             const label = new Date(`1970-01-01T${val}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
             timeOptions.push({ val, label });
         }
@@ -439,7 +439,7 @@ const AdminSchedulePage = () => {
                                                 }}
                                                 title={`Use template: ${template.title} `}
                                             >
-                                                {template.title} ({format(parseISO(`1970-01-01T${template.start_time} `), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time} `), 'h:mma').toLowerCase()})
+                                                {template.title} ({format(parseISO(`1970-01-01T${template.start_time.trim()}`), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time.trim()}`), 'h:mma').toLowerCase()})
                                             </button>
                                             <button
                                                 type="button"
