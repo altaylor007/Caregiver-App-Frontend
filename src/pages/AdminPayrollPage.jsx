@@ -274,11 +274,15 @@ const PayrollReportView = () => {
             }).join('\n\n');
             const weDate = format(parseISO(previewData.end_date), 'MM-dd');
             const smsBody = `WE ${weDate}\n\n${smsLines}`;
-            window.location.href = `sms:+14125123099?body=${encodeURIComponent(smsBody)}`;
+
+            const { error: smsError } = await supabase.functions.invoke('send-sms', {
+                body: { to: '+14125123099', messageBody: smsBody }
+            });
+            if (smsError) throw new Error('Report saved but SMS failed: ' + smsError.message);
 
             setPreviewData(null);
             fetchHistory();
-            alert('Report saved successfully! Your SMS app should now open.');
+            alert('Payroll report saved and SMS sent successfully!');
         } catch (err) {
             alert('Error saving report: ' + err.message);
         }
