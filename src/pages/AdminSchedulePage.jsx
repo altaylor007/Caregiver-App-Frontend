@@ -327,61 +327,70 @@ const AdminSchedulePage = () => {
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-                <h2>Master Schedule</h2>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button onClick={prevMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
-                        <ChevronLeft size={20} />
-                    </button>
-                    <h3 style={{ margin: 0, minWidth: '150px', textAlign: 'center', fontSize: '1.2rem' }}>
-                        {format(currentDate, 'MMMM yyyy')}
-                    </h3>
-                    <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
-                        Today
-                    </button>
-                    <button onClick={nextMonth} className="btn btn-outline" style={{ padding: '0.4rem' }}>
-                        <ChevronRight size={20} />
-                    </button>
-                    {/* View toggle */}
-                    <div style={{ display: 'flex', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--primary-300)', marginLeft: '0.5rem' }}>
-                        <button
-                            onClick={() => setViewMode('calendar')}
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', background: viewMode === 'calendar' ? 'var(--primary-600)' : 'transparent', color: viewMode === 'calendar' ? 'white' : 'var(--primary-600)', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                        >📅 Schedule</button>
-                        <button
-                            onClick={() => setViewMode('availability')}
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', background: viewMode === 'availability' ? 'var(--primary-600)' : 'transparent', color: viewMode === 'availability' ? 'white' : 'var(--primary-600)', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                        >👥 Availability</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                {/* Top Row: Title, Month Nav, View Toggle */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                    <h2 style={{ margin: 0 }}>Master Schedule</h2>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', padding: '0.2rem' }}>
+                            <button onClick={prevMonth} className="btn" style={{ padding: '0.4rem', background: 'transparent', color: 'var(--neutral-600)' }}>
+                                <ChevronLeft size={20} />
+                            </button>
+                            <h3 style={{ margin: 0, minWidth: '160px', textAlign: 'center', fontSize: '1.1rem' }}>
+                                {format(currentDate, 'MMMM yyyy')}
+                            </h3>
+                            <button onClick={nextMonth} className="btn" style={{ padding: '0.4rem', background: 'transparent', color: 'var(--neutral-600)' }}>
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
+                        <button onClick={goToToday} className="btn btn-outline text-sm" style={{ padding: '0.4rem 0.75rem' }}>
+                            Today
+                        </button>
+                        <div style={{ display: 'flex', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--primary-300)', marginLeft: '0.5rem' }}>
+                            <button
+                                onClick={() => setViewMode('calendar')}
+                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', background: viewMode === 'calendar' ? 'var(--primary-600)' : 'transparent', color: viewMode === 'calendar' ? 'white' : 'var(--primary-600)', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                            >📅 Schedule</button>
+                            <button
+                                onClick={() => setViewMode('availability')}
+                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', background: viewMode === 'availability' ? 'var(--primary-600)' : 'transparent', color: viewMode === 'availability' ? 'white' : 'var(--primary-600)', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                            >👥 Availability</button>
+                        </div>
                     </div>
-                    {viewMode === 'calendar' && (
-                        <>
-                            <div style={{ marginLeft: '1rem' }}>
-                                <select
-                                    className="form-input"
-                                    style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem', width: 'auto', minWidth: '180px' }}
-                                    value={filterCaregiverId}
-                                    onChange={(e) => setFilterCaregiverId(e.target.value)}
-                                >
-                                    <option value="">View: Published Schedule (All)</option>
-                                    <optgroup label="Caregivers">
-                                        {caregivers.map(cg => (
-                                            <option key={cg.id} value={cg.id}>{cg.full_name || 'Unnamed'}'s Schedule</option>
-                                        ))}
-                                    </optgroup>
-                                </select>
-                            </div>
-                            <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
-                                <Plus size={16} /> New Shift
-                            </button>
-                            <button onClick={() => window.print()} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
-                                <Printer size={16} /> Print
-                            </button>
-                            <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-secondary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
+                </div>
+
+                {/* Bottom Row: Actions (Only on Calendar View) */}
+                {viewMode === 'calendar' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <label className="text-sm font-semibold text-primary" style={{ whiteSpace: 'nowrap' }}>Filter:</label>
+                            <select
+                                className="form-input"
+                                style={{ padding: '0.4rem 0.5rem', fontSize: '0.85rem', width: 'auto', minWidth: '220px', backgroundColor: 'white' }}
+                                value={filterCaregiverId}
+                                onChange={(e) => setFilterCaregiverId(e.target.value)}
+                            >
+                                <option value="">All Caregivers</option>
+                                <optgroup label="Individuals">
+                                    {caregivers.map(cg => (
+                                        <option key={cg.id} value={cg.id}>{cg.full_name || 'Unnamed'}'s Schedule</option>
+                                    ))}
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
                                 <CalendarIcon size={16} /> Request Availability
                             </button>
-                        </>
-                    )}
-                </div>
+                            <button onClick={() => window.print()} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
+                                <Printer size={16} /> Print
+                            </button>
+                            <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
+                                <Plus size={16} /> New Shift
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Shift Edit Modal */}
@@ -838,22 +847,24 @@ const AdminSchedulePage = () => {
                                                             const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
 
                                                             return (
-                                                                <div key={shift.id} className={`shift - card - mini ${cardClass} `} onClick={() => openEditForm(shift)}>
-                                                                    <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                                        <span>{shift.title}</span>
+                                                                <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.2rem' }}>
+                                                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', lineHeight: 1.2, wordBreak: 'break-word' }}>
+                                                                            {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : '🚨 Open Shift'}
+                                                                        </div>
                                                                         <button
                                                                             onClick={(e) => { e.stopPropagation(); handleDelete(shift.id); }}
-                                                                            style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem' }}
+                                                                            style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem', flexShrink: 0 }}
                                                                             title="Delete Shift"
                                                                         >
                                                                             <Trash2 size={12} />
                                                                         </button>
                                                                     </div>
-                                                                    <div style={{ color: 'var(--neutral-600)', marginBottom: '0.2rem', marginTop: '0.2rem', fontSize: '0.7rem' }}>
-                                                                        {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                                    <div style={{ fontWeight: 500, color: 'var(--neutral-800)', fontSize: '0.75rem', lineHeight: 1.2, wordBreak: 'break-word' }}>
+                                                                        {shift.title}
                                                                     </div>
-                                                                    <div style={{ fontSize: '0.7rem', color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', fontWeight: 600 }}>
-                                                                        {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : 'Open Shift'}
+                                                                    <div style={{ color: 'var(--neutral-500)', fontSize: '0.7rem', fontWeight: 500 }}>
+                                                                        {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
                                                                     </div>
                                                                     {shift.trade_notes && (
                                                                         <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--primary-600)', fontWeight: 600 }}>
