@@ -230,6 +230,25 @@ const PayrollReportView = () => {
         setPreviewData({ ...previewData, rows: previewData.rows.map(r => r.caregiver_id === userId ? { ...r, total_hours: Number(newHours) } : r) });
     };
 
+    const handleReinstate = async (report) => {
+        if (!window.confirm('Reinstate this report as a draft? It will be removed from the confirmed list and loaded for editing.')) return;
+        setLoading(true);
+        try {
+            const { error } = await supabase.from('payroll_reports').delete().eq('id', report.id);
+            if (error) throw error;
+            // Load the old data back into the preview form
+            setPreviewData({
+                start_date: report.start_date,
+                end_date: report.end_date,
+                rows: report.report_data || []
+            });
+            fetchHistory();
+        } catch (err) {
+            alert('Error reinstating report: ' + err.message);
+        }
+        setLoading(false);
+    };
+
     const confirmAndSend = async () => {
         if (!previewData || previewData.rows.length === 0) return;
         if (!window.confirm('Are you sure you want to finalize this payroll and send via SMS? This will lock the hours.')) return;
@@ -353,9 +372,18 @@ const PayrollReportView = () => {
                                         Generated on {format(parseISO(report.generated_at), 'MMM d, h:mm a')} • {report.report_data?.length || 0} Caregivers
                                     </div>
                                 </div>
-                                <span style={{ fontSize: '0.75rem', backgroundColor: 'var(--success-50)', color: 'var(--success-700)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <CheckCircle size={12} /> Confirmed
-                                </span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '0.75rem', backgroundColor: 'var(--success-50)', color: 'var(--success-700)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        <CheckCircle size={12} /> Confirmed
+                                    </span>
+                                    <button
+                                        onClick={() => handleReinstate(report)}
+                                        disabled={loading}
+                                        style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--warning-300)', backgroundColor: 'var(--warning-50)', color: 'var(--warning-700)', cursor: 'pointer', fontWeight: 600 }}
+                                    >
+                                        Reinstate
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
