@@ -232,7 +232,7 @@ const PayrollReportView = () => {
 
     const confirmAndSend = async () => {
         if (!previewData || previewData.rows.length === 0) return;
-        if (!window.confirm('Are you sure you want to finalize this payroll and send the email? This will lock the hours.')) return;
+        if (!window.confirm('Are you sure you want to finalize this payroll and send via SMS? This will lock the hours.')) return;
         setLoading(true);
         try {
             const { error } = await supabase.from('payroll_reports').insert([{
@@ -241,14 +241,16 @@ const PayrollReportView = () => {
             }]);
             if (error) throw error;
 
-            let emailBody = `Payroll Report for period: ${previewData.start_date} to ${previewData.end_date}\n\n`;
-            previewData.rows.forEach(r => { emailBody += `${r.full_name}: ${r.total_hours} hrs\n`; });
-            emailBody += `\n\nTotal Caregivers: ${previewData.rows.length}`;
-            window.location.href = `mailto:lenke.taylor@gmail.com?subject=ACT Payroll Report (${previewData.start_date})&body=${encodeURIComponent(emailBody)}`;
+            const smsLines = previewData.rows.map(r => {
+                const firstName = r.full_name.split(' ')[0];
+                return `${firstName}\nHours ${r.total_hours}`;
+            }).join('\n\n');
+            const smsBody = `Payroll ${previewData.start_date} to ${previewData.end_date}\n\n${smsLines}`;
+            window.location.href = `sms:+14125123099?body=${encodeURIComponent(smsBody)}`;
 
             setPreviewData(null);
             fetchHistory();
-            alert('Report saved successfully! Your email client should now open.');
+            alert('Report saved successfully! Your SMS app should now open.');
         } catch (err) {
             alert('Error saving report: ' + err.message);
         }
@@ -321,7 +323,7 @@ const PayrollReportView = () => {
                                     <button onClick={confirmAndSend} className="btn btn-primary"
                                         style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--success-600)' }}
                                         disabled={loading}>
-                                        <Mail size={16} /> Confirm & Email lenke.taylor@gmail.com
+                                        <CheckCircle size={16} /> Confirm & Send SMS
                                     </button>
                                 </div>
                             </>
