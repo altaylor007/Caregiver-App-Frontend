@@ -259,7 +259,21 @@ const PayrollReportView = () => {
             return;
         }
 
-        if (!window.confirm('Are you sure you want to finalize this payroll and send via SMS? This will lock the hours.')) return;
+        // Look up designated payroll SMS contacts
+        const { data: contacts, error: contactErr } = await supabase
+            .from('users')
+            .select('id, full_name, phone')
+            .eq('payroll_report_contact', true);
+
+        if (contactErr) { alert('Error fetching payroll contacts: ' + contactErr.message); return; }
+
+        const validContacts = (contacts || []).filter(c => c.phone);
+        if (validContacts.length === 0) {
+            alert('No payroll report contacts with a phone number are configured.\n\nGo to Role Management → Payroll Report Recipients to designate a contact.');
+            return;
+        }
+
+        if (!window.confirm(`Are you sure you want to finalize this payroll and send via SMS to ${validContacts.map(c => c.full_name).join(', ')}? This will lock the hours.`)) return;
         setLoading(true);
         try {
             const { error } = await supabase.from('payroll_reports').insert([{
@@ -275,14 +289,22 @@ const PayrollReportView = () => {
             const weDate = format(parseISO(previewData.end_date), 'MM-dd');
             const smsBody = `WE ${weDate}\n\n${smsLines}`;
 
-            const { error: smsError } = await supabase.functions.invoke('send-sms', {
-                body: { to: '+14125123099', messageBody: smsBody }
-            });
-            if (smsError) throw new Error('Report saved but SMS failed: ' + smsError.message);
+            // Send to each designated contact
+            const sendErrors = [];
+            for (const contact of validContacts) {
+                const { error: smsError } = await supabase.functions.invoke('send-sms', {
+                    body: { to: contact.phone, messageBody: smsBody }
+                });
+                if (smsError) sendErrors.push(`${contact.full_name}: ${smsError.message}`);
+            }
 
             setPreviewData(null);
             fetchHistory();
-            alert('Payroll report saved and SMS sent successfully!');
+            if (sendErrors.length > 0) {
+                alert(`Report saved, but some SMS failed:\n${sendErrors.join('\n')}`);
+            } else {
+                alert(`Payroll report saved and SMS sent to ${validContacts.length} contact(s)!`);
+            }
         } catch (err) {
             alert('Error saving report: ' + err.message);
         }
