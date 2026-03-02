@@ -5,13 +5,25 @@ const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
 const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN')
 const twilioPhoneNumber = Deno.env.get('TWILIO_PHONE_NUMBER')
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 serve(async (req) => {
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders })
+    }
+
     try {
         // Accept either { userId, messageBody } OR { to, messageBody } for direct number sends
         const { userId, to, messageBody } = await req.json()
 
         if (!messageBody) {
-            return new Response(JSON.stringify({ error: "messageBody is required" }), { status: 400 })
+            return new Response(JSON.stringify({ error: "messageBody is required" }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
         }
 
         let targetPhone: string
@@ -23,22 +35,30 @@ serve(async (req) => {
             // Legacy: look up phone number from user profile
             const { data: user, error: userError } = await supabaseClient
                 .from('users')
-                .select('phone_number, sms_enabled')
+                .select('phone, sms_enabled')
                 .eq('id', userId)
                 .single()
 
             if (userError || !user) {
-                return new Response(JSON.stringify({ error: "User not found" }), { status: 404 })
+                return new Response(JSON.stringify({ error: "User not found" }), {
+                    status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
             }
             if (!user.sms_enabled) {
-                return new Response(JSON.stringify({ message: "User has SMS disabled" }), { status: 200 })
+                return new Response(JSON.stringify({ message: "User has SMS disabled" }), {
+                    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
             }
-            if (!user.phone_number) {
-                return new Response(JSON.stringify({ error: "User has no phone number" }), { status: 400 })
+            if (!user.phone) {
+                return new Response(JSON.stringify({ error: "User has no phone number" }), {
+                    status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
             }
-            targetPhone = user.phone_number
+            targetPhone = user.phone
         } else {
-            return new Response(JSON.stringify({ error: "Either userId or to is required" }), { status: 400 })
+            return new Response(JSON.stringify({ error: "Either userId or to is required" }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
         }
 
         // Send via Twilio
@@ -63,7 +83,7 @@ serve(async (req) => {
 
         if (!twilioResponse.ok) {
             console.error("Twilio Error:", twilioData)
-            throw new Error(twilioData.message || "Failed to send SMS")
+            throw new Error(twilioData.message || "Failed to send SMS via Twilio")
         }
 
         // Log the outbound message
@@ -77,14 +97,14 @@ serve(async (req) => {
         })
 
         return new Response(JSON.stringify({ success: true, sid: twilioData.sid }), {
-            headers: { "Content-Type": "application/json" },
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200,
         })
 
     } catch (error) {
         console.error("Error in send-sms:", error)
-        return new Response(JSON.stringify({ error: error.message }), {
-            headers: { "Content-Type": "application/json" },
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 500,
         })
     }
