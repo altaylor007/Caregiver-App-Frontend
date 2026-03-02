@@ -251,6 +251,14 @@ const PayrollReportView = () => {
 
     const confirmAndSend = async () => {
         if (!previewData || previewData.rows.length === 0) return;
+
+        // Prevent duplicate: block if a confirmed report for this week-ending already exists
+        const duplicate = reports.find(r => r.end_date === previewData.end_date);
+        if (duplicate) {
+            alert(`A confirmed payroll report for week ending ${previewData.end_date} already exists.\n\nTo submit a new one, an admin must first "Reinstate" the existing report from the history list below.`);
+            return;
+        }
+
         if (!window.confirm('Are you sure you want to finalize this payroll and send via SMS? This will lock the hours.')) return;
         setLoading(true);
         try {
