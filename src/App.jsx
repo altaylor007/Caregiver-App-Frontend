@@ -15,6 +15,7 @@ import MessagesPage from './pages/MessagesPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminRolesPage from './pages/AdminRolesPage';
 import AuthPage from './pages/AuthPage';
+import UpdatePasswordPage from './pages/UpdatePasswordPage';
 
 import { useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -44,6 +45,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/auth" element={session ? <Navigate to="/" replace /> : <AuthPage />} />
+          <Route path="/update-password" element={<ProtectedRoute><UpdatePasswordPage /></ProtectedRoute>} />
 
           {/* Protected Routes enclosed in MainLayout */}
           <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>

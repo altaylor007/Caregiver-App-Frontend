@@ -293,7 +293,7 @@ const AvailabilityPage = () => {
                         let statusLabel = '';
 
                         if (status === 'available') {
-                            bgColor = 'var(--success-50)';
+                            bgColor = 'var(--success-200)';
                             borderColor = 'var(--success-500)';
                             dot = <CheckCircle size={14} color="var(--success-600)" />;
                             statusLabel = 'All Day';

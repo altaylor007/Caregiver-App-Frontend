@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LogOut, Home, Calendar, Users, MessageSquare, Menu, X, FileText, Bell, FolderOpen, Shield, User, Contact, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -19,8 +19,16 @@ const MainLayout = () => {
     const { user, profile, signOut, isAdmin, isSuperAdmin } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
+    const location = useLocation();
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+
+    useEffect(() => {
+        if (location.pathname.includes('/messages')) {
+            setHasUnreadMessages(false);
+        }
+    }, [location.pathname]);
 
     useEffect(() => {
         if (!profile) return;
@@ -45,17 +53,53 @@ const MainLayout = () => {
             })
             .subscribe();
 
-        return () => supabase.removeChannel(notifSub);
+        const checkUnreadMessages = async () => {
+            // Get user's last read time
+            const { data: userData } = await supabase.from('users').select('last_read_messages_at').eq('id', user.id).single();
+            if (userData) {
+                const lastRead = new Date(userData.last_read_messages_at || '2000-01-01').getTime();
+
+                // Get latest message time
+                const { data: latestMsg } = await supabase.from('messages').select('created_at').order('created_at', { ascending: false }).limit(1).single();
+                if (latestMsg) {
+                    const latestTime = new Date(latestMsg.created_at).getTime();
+                    if (latestTime > lastRead) {
+                        setHasUnreadMessages(true);
+                    }
+                }
+            }
+        };
+        checkUnreadMessages();
+
+        const msgsSub = supabase
+            .channel('public:messages_layout')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+                // If we are NOT currently on the messages page, show the dot
+                if (!window.location.pathname.includes('/messages')) {
+                    setHasUnreadMessages(true);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(notifSub);
+            supabase.removeChannel(msgsSub);
+        };
     }, [user]);
 
-    const markAsRead = async (notifId, notifType) => {
-        await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
-        setNotifications(prev => prev.filter(n => n.id !== notifId));
+    const markAsRead = async (notif) => {
+        await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id);
+        setNotifications(prev => prev.filter(n => n.id !== notif.id));
         setShowNotifications(false);
-        if (notifType === 'document') {
+        if (notif.type === 'document') {
             navigate('/documents');
         } else {
-            navigate('/messages'); // Take them to messages where they were tagged
+            // Find reference_id to open the specific thread
+            if (notif.reference_id) {
+                navigate(`/messages?msg=${notif.reference_id}`);
+            } else {
+                navigate('/messages');
+            }
         }
     };
     return (
@@ -63,7 +107,8 @@ const MainLayout = () => {
             {/* Top Header */}
             <header className="app-header">
                 <div>
-                    <NavLink to="/" style={{ textDecoration: 'none' }}>
+                    <NavLink to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <img src="/tulip.svg" alt="ACT Logo" style={{ width: '2rem', height: '2rem' }} />
                         <h1 className="text-primary" style={{ margin: 0, cursor: 'pointer' }}>ACT</h1>
                     </NavLink>
                 </div>
@@ -104,7 +149,7 @@ const MainLayout = () => {
                                 notifications.map(n => (
                                     <div
                                         key={n.id}
-                                        onClick={() => markAsRead(n.id, n.type)}
+                                        onClick={() => markAsRead(n)}
                                         style={{ padding: '0.5rem', cursor: 'pointer', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--primary-50)' }}
                                     >
                                         <p className="text-sm">
@@ -155,7 +200,15 @@ const MainLayout = () => {
                             <span>Documents</span>
                         </NavLink>
                         <NavLink to="/messages" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <MessageSquare />
+                            <div style={{ position: 'relative' }}>
+                                <MessageSquare />
+                                {hasUnreadMessages && (
+                                    <span style={{
+                                        position: 'absolute', top: -2, right: -4, width: 8, height: 8,
+                                        backgroundColor: 'var(--danger-500)', borderRadius: '50%'
+                                    }}></span>
+                                )}
+                            </div>
                             <span>Messages</span>
                         </NavLink>
                     </>
@@ -182,7 +235,15 @@ const MainLayout = () => {
                             to="/messages"
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         >
-                            <MessageSquare />
+                            <div style={{ position: 'relative' }}>
+                                <MessageSquare />
+                                {hasUnreadMessages && (
+                                    <span style={{
+                                        position: 'absolute', top: -2, right: -4, width: 8, height: 8,
+                                        backgroundColor: 'var(--danger-500)', borderRadius: '50%'
+                                    }}></span>
+                                )}
+                            </div>
                             <span>Messages</span>
                         </NavLink>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy } from 'lucide-react';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy, KeyRound } from 'lucide-react';
 
 const AdminCaregiversPage = () => {
     const [caregivers, setCaregivers] = useState([]);
@@ -104,6 +105,22 @@ const AdminCaregiversPage = () => {
             fetchCaregivers();
         } else {
             alert("Error updating payroll status: " + error.message);
+        }
+    };
+
+    const handleResetPassword = async (cg) => {
+        const DEFAULT_PASSWORD = 'Agnes2026';
+        if (!window.confirm(`Reset ${cg.full_name || cg.email}'s password to the default (${DEFAULT_PASSWORD})?`)) return;
+
+        const { error } = await supabaseAdmin.auth.admin.updateUserById(cg.id, {
+            password: DEFAULT_PASSWORD
+        });
+
+        if (error) {
+            alert('Error resetting password: ' + error.message);
+        } else {
+            setSuccessMsg(`Password for ${cg.full_name || cg.email} reset to ${DEFAULT_PASSWORD} successfully.`);
+            setTimeout(() => setSuccessMsg(''), 5000);
         }
     };
 
@@ -244,6 +261,28 @@ const AdminCaregiversPage = () => {
                                                 transition: 'left 0.2s',
                                                 boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                                             }} />
+                                        </button>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', display: 'block' }}>Password</span>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--neutral-400)' }}>Default: Agnes2026</span>
+                                        </div>
+                                        <button
+                                            onClick={() => handleResetPassword(cg)}
+                                            className="btn"
+                                            title="Reset to default password: Agnes2026"
+                                            style={{
+                                                padding: '0.2rem 0.5rem',
+                                                fontSize: '0.75rem',
+                                                backgroundColor: 'var(--primary-50)',
+                                                color: 'var(--primary-700)',
+                                                border: '1px solid var(--primary-200)',
+                                                display: 'flex', alignItems: 'center', gap: '0.3rem'
+                                            }}
+                                        >
+                                            <KeyRound size={13} /> Reset
                                         </button>
                                     </div>
                                 </div>

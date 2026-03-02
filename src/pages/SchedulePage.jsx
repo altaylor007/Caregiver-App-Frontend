@@ -9,6 +9,15 @@ const SchedulePage = () => {
     const [shifts, setShifts] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    const [incomingTrades, setIncomingTrades] = useState([]);
+    const [caregivers, setCaregivers] = useState([]);
+
+    // Trade Modal state
+    const [tradeModalOpen, setTradeModalOpen] = useState(false);
+    const [shiftToTrade, setShiftToTrade] = useState(null);
+    const [selectedCaregiverForTrade, setSelectedCaregiverForTrade] = useState('');
+    const [tradeSubmitting, setTradeSubmitting] = useState(false);
+
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showOnlyMyShifts, setShowOnlyMyShifts] = useState(false);
 
@@ -38,6 +47,29 @@ const SchedulePage = () => {
         if (data) setShifts(data);
         if (error) console.error("Error fetching shifts:", error);
 
+        // Fetch active caregivers for the trade dropdown
+        const cgRes = await supabase.from('users').select('id, full_name').eq('role', 'caregiver').eq('status', 'active');
+        if (cgRes.data) setCaregivers(cgRes.data.filter(c => c.id !== user?.id));
+
+        // Fetch incoming pending trades
+        const tradesRes = await supabase
+            .from('shift_trades')
+            .select('*, shifts(*)')
+            .eq('proposed_to', user?.id)
+            .eq('status', 'pending');
+
+        if (tradesRes.data && tradesRes.data.length > 0) {
+            const requesterIds = [...new Set(tradesRes.data.map(t => t.requested_by))];
+            const { data: requesters } = await supabase.from('users').select('id, full_name').in('id', requesterIds);
+            const enrichedTrades = tradesRes.data.map(t => ({
+                ...t,
+                requester_name: requesters?.find(r => r.id === t.requested_by)?.full_name || 'Unknown Caregiver'
+            }));
+            setIncomingTrades(enrichedTrades);
+        } else {
+            setIncomingTrades([]);
+        }
+
         setLoading(false);
     };
 
@@ -61,7 +93,77 @@ const SchedulePage = () => {
     };
 
     const handleTradeShift = async (shift) => {
-        alert("Shift trading functionality will be implemented in the next module!");
+        setShiftToTrade(shift);
+        setSelectedCaregiverForTrade('');
+        setTradeModalOpen(true);
+    };
+
+    const submitTradeRequest = async () => {
+        if (!selectedCaregiverForTrade) return;
+        setTradeSubmitting(true);
+        try {
+            const { error: tradeErr } = await supabase.from('shift_trades').insert({
+                shift_id: shiftToTrade.id,
+                requested_by: user.id,
+                proposed_to: selectedCaregiverForTrade,
+                status: 'pending'
+            });
+            if (tradeErr) throw tradeErr;
+
+            // Notify proposed caregiver
+            await supabase.from('notifications').insert({
+                user_id: selectedCaregiverForTrade,
+                actor_id: user.id,
+                type: 'trade_request',
+                reference_id: shiftToTrade.id
+            });
+
+            alert('Trade request sent!');
+            setTradeModalOpen(false);
+        } catch (error) {
+            alert("Error sending trade request: " + error.message);
+        }
+        setTradeSubmitting(false);
+    };
+
+    const handleAcceptTrade = async (trade) => {
+        if (!window.confirm("Accept this shift trade? You will be assigned to this shift.")) return;
+        try {
+            const { error } = await supabase.rpc('accept_shift_trade', { trade_id: trade.id });
+            if (error) throw error;
+
+            // Notify original requester
+            await supabase.from('notifications').insert({
+                user_id: trade.requested_by,
+                actor_id: user.id,
+                type: 'trade_accepted',
+                reference_id: trade.shift_id
+            });
+
+            fetchSchedule();
+        } catch (error) {
+            alert("Error accepting trade: " + error.message);
+        }
+    };
+
+    const handleRejectTrade = async (trade) => {
+        if (!window.confirm("Reject this shift trade?")) return;
+        try {
+            const { error } = await supabase.from('shift_trades').update({ status: 'denied' }).eq('id', trade.id);
+            if (error) throw error;
+
+            // Notify original requester
+            await supabase.from('notifications').insert({
+                user_id: trade.requested_by,
+                actor_id: user.id,
+                type: 'trade_rejected',
+                reference_id: trade.shift_id
+            });
+
+            fetchSchedule();
+        } catch (error) {
+            alert("Error rejecting trade: " + error.message);
+        }
     };
 
     const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -108,6 +210,76 @@ const SchedulePage = () => {
                     </button>
                 </div>
             </div>
+
+            {incomingTrades.length > 0 && (
+                <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-md)' }}>
+                    <h3 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--warning-700)', fontSize: '1rem' }}>Incoming Trade Requests</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {incomingTrades.map(trade => (
+                            <div key={trade.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--neutral-200)' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{trade.shifts?.title}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
+                                        {format(parseISO(trade.shifts?.date), 'EEEE, MMM do')} | {format(parseISO(trade.shifts?.start_time), 'h:mma').toLowerCase()} - {format(parseISO(trade.shifts?.end_time), 'h:mma').toLowerCase()}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.2rem' }}>
+                                        Requested by: <strong>{trade.requester_name}</strong>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button onClick={() => handleAcceptTrade(trade)} className="btn btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>Accept</button>
+                                    <button onClick={() => handleRejectTrade(trade)} className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--danger-600)' }}>Reject</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Trade Shift Modal */}
+            {tradeModalOpen && shiftToTrade && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '400px', margin: 'auto' }}>
+                        <h3 style={{ marginBottom: '1rem', marginTop: 0 }}>Trade Shift</h3>
+                        <div style={{ marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+                            <div style={{ fontWeight: 600 }}>{shiftToTrade.title}</div>
+                            <div style={{ color: 'var(--neutral-600)' }}>{format(parseISO(shiftToTrade.date), 'EEEE, MMMM d, yyyy')}</div>
+                            <div style={{ color: 'var(--neutral-600)' }}>{format(parseISO(shiftToTrade.start_time), 'h:mma')} - {format(parseISO(shiftToTrade.end_time), 'h:mma')}</div>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Select Caregiver to trade with:</label>
+                            <select
+                                className="form-input"
+                                value={selectedCaregiverForTrade}
+                                onChange={(e) => setSelectedCaregiverForTrade(e.target.value)}
+                            >
+                                <option value="">-- Select Caregiver --</option>
+                                {caregivers.map(cg => (
+                                    <option key={cg.id} value={cg.id}>{cg.full_name}</option>
+                                ))}
+                            </select>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.5rem' }}>
+                                A notification will be sent to the selected caregiver. If they accept, the shift will be reassigned to them.
+                            </p>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                            <button
+                                onClick={submitTradeRequest}
+                                className="btn btn-primary"
+                                style={{ flex: 1 }}
+                                disabled={!selectedCaregiverForTrade || tradeSubmitting}
+                            >
+                                {tradeSubmitting ? 'Sending Request...' : 'Send Trade Request'}
+                            </button>
+                            <button onClick={() => setTradeModalOpen(false)} className="btn btn-outline" style={{ flex: 1 }}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.875rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--primary-500)' }}></span> My Shifts</div>

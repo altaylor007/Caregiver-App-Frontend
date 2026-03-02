@@ -397,6 +397,16 @@ const AdminSchedulePage = () => {
                                 </div>
                             )}
 
+                            {currentShift?.trade_notes && (
+                                <div style={{ backgroundColor: 'var(--primary-50)', color: 'var(--primary-700)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                    <span>🔄</span>
+                                    <div>
+                                        <strong>Trade Notation:</strong>
+                                        <div style={{ marginTop: '0.2rem' }}>{currentShift.trade_notes}</div>
+                                    </div>
+                                </div>
+                            )}
+
                             <form onSubmit={handleSubmit}>
                                 <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                     <span className="text-sm font-semibold" style={{ marginRight: '0.5rem', color: 'var(--neutral-600)' }}>Templates:</span>
@@ -577,7 +587,7 @@ const AdminSchedulePage = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--danger-500)', display: 'inline-block' }}></span> Unavailable</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><span style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: 'var(--neutral-100)', border: '1.5px solid var(--neutral-300)', display: 'inline-block' }}></span> No Response</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                <span style={{ width: 18, height: 18, borderRadius: 3, backgroundColor: 'var(--success-500)', border: '3px solid var(--warning-500)', display: 'inline-block' }}></span>
+                                <span style={{ width: 18, height: 18, borderRadius: 3, backgroundColor: 'transparent', border: '3px solid var(--warning-500)', display: 'inline-block' }}></span>
                                 Open Shift Available (click to assign)
                             </div>
                         </div>
@@ -842,6 +852,11 @@ const AdminSchedulePage = () => {
                                                                     <div style={{ fontSize: '0.7rem', color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', fontWeight: 600 }}>
                                                                         {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : 'Open Shift'}
                                                                     </div>
+                                                                    {shift.trade_notes && (
+                                                                        <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--primary-600)', fontWeight: 600 }}>
+                                                                            🔄 Shift Traded
+                                                                        </div>
+                                                                    )}
                                                                     {!isAssigned && (
                                                                         <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
                                                                             {availabilityResponses.filter(r => r.date === dayStr).length} available

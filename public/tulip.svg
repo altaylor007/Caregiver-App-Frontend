@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    path, rect { fill: #0d9488; }
+    @media (prefers-color-scheme: dark) {
+      path, rect { fill: #2dd4bf; }
+    }
+  </style>
+  <!-- center petal -->
+  <path d="M 50 10 C 60 40, 60 60, 50 75 C 40 60, 40 40, 50 10 Z" />
+  <!-- left petal -->
+  <path d="M 30 20 C 40 30, 45 50, 50 75 C 35 70, 20 50, 30 20 Z" />
+  <!-- right petal -->
+  <path d="M 70 20 C 60 30, 55 50, 50 75 C 65 70, 80 50, 70 20 Z" />
+  <!-- stem -->
+  <rect x="47" y="75" width="6" height="25" rx="3" />
+  <!-- leaf -->
+  <path d="M 50 85 C 65 85, 75 75, 75 55 C 75 80, 60 95, 50 90 Z" />
+</svg>

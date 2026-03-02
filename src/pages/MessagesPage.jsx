@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format, parseISO } from 'date-fns';
@@ -16,6 +17,8 @@ const EMOJI_LIBRARY = [
 
 const MessagesPage = () => {
     const { user, isAdmin } = useAuth();
+    const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [view, setView] = useState('topics');
     const [activeTopic, setActiveTopic] = useState(null);
@@ -54,14 +57,59 @@ const MessagesPage = () => {
         return () => supabase.removeChannel(topicsSub);
     }, []);
 
+    // Handle deep-linking to a specific message from a notification URL
+    useEffect(() => {
+        if (!user) return;
+
+        // Mark as read when landing on page
+        supabase.from('users').update({ last_read_messages_at: new Date().toISOString() }).eq('id', user.id).then();
+
+        const msgId = searchParams.get('msg');
+        const topicParam = searchParams.get('topic');
+
+        if (msgId) {
+            const loadDeepLinkedTopic = async () => {
+                // Find what topic this message belongs to
+                const { data } = await supabase.from('messages').select('topic_id').eq('id', msgId).single();
+                if (data?.topic_id) {
+                    // Fetch the topic details
+                    const { data: topicData } = await supabase.from('message_topics').select('*').eq('id', data.topic_id).single();
+                    if (topicData) {
+                        setActiveTopic(topicData);
+                        setView('messages');
+
+                        // Clear the msg parameter and replace with topic parameter
+                        setSearchParams({ topic: topicData.id }, { replace: true });
+                    }
+                }
+            };
+            loadDeepLinkedTopic();
+        } else if (topicParam && (!activeTopic || activeTopic.id !== topicParam)) {
+            const loadDirectTopic = async () => {
+                const { data: topicData } = await supabase.from('message_topics').select('*').eq('id', topicParam).single();
+                if (topicData) {
+                    setActiveTopic(topicData);
+                    setView('messages');
+                }
+            };
+            loadDirectTopic();
+        }
+    }, [searchParams.get('msg'), searchParams.get('topic'), user]);
+
     useEffect(() => {
         if (view === 'messages' && activeTopic) {
             fetchMessages(activeTopic.id);
 
             const msgSub = supabase
                 .channel(`messages_topic_${activeTopic.id}`)
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `topic_id=eq.${activeTopic.id}` }, () => fetchMessages(activeTopic.id))
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => fetchMessages(activeTopic.id))
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `topic_id=eq.${activeTopic.id}` }, (payload) => {
+                    console.log('Realtime msg change:', payload);
+                    fetchMessages(activeTopic.id);
+                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, (payload) => {
+                    console.log('Realtime reaction change:', payload);
+                    fetchMessages(activeTopic.id);
+                })
                 .subscribe();
 
             return () => supabase.removeChannel(msgSub);
@@ -70,7 +118,10 @@ const MessagesPage = () => {
 
     useEffect(() => {
         if (view === 'messages') {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+            // Give a slight delay for messages to render before scrolling to bottom
+            setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
         }
     }, [messages, view]);
 
@@ -125,17 +176,22 @@ const MessagesPage = () => {
             return;
         }
 
-        const { error: msgError } = await supabase.from('messages').insert([{
+        const content = newTopicMessage.trim();
+        const { data: msgData, error: msgError } = await supabase.from('messages').insert([{
             author_id: user.id,
             topic_id: topicData.id,
-            content: newTopicMessage.trim()
-        }]);
+            content: content
+        }]).select().single();
 
-        if (!msgError) {
+        if (!msgError && msgData) {
             setNewTopicTitle('');
             setNewTopicMessage('');
             setActiveTopic(topicData);
             setView('messages');
+            setSearchParams({ topic: topicData.id });
+
+            // Handle mentions
+            handleMentionsNotification(content, msgData.id);
         } else {
             alert('Topic created but first message failed: ' + msgError?.message);
         }
@@ -173,18 +229,47 @@ const MessagesPage = () => {
 
         if (!error && insertedMsg) {
             setNewMessage('');
-            const mentions = users.filter(u => content.toLowerCase().includes(`@${u.full_name?.toLowerCase()}`));
-            if (mentions.length > 0) {
-                const notifications = mentions.map(m => ({
-                    user_id: m.id, actor_id: user.id, type: 'mention',
-                    reference_id: insertedMsg.id, is_read: false
-                }));
-                supabase.from('notifications').insert(notifications).then();
-            }
+
+            // Bump read receipt since they are active
+            supabase.from('users').update({ last_read_messages_at: new Date().toISOString() }).eq('id', user.id).then();
+
+            // Trigger a manual fetch just in case WebSockets are slow
+            fetchMessages(activeTopic.id);
+
+            handleMentionsNotification(content, insertedMsg.id);
         } else {
             alert('Failed to send message.');
         }
         setIsSending(false);
+    };
+
+    const handleMentionsNotification = async (content, messageId) => {
+        if (!content.includes('@')) return; // Quick exit 
+
+        if (content.toLowerCase().includes('@all')) {
+            // Notify everyone except the sender
+            const notifications = users.filter(u => u.id !== user.id).map(u => ({
+                user_id: u.id, actor_id: user.id, type: 'mention',
+                reference_id: messageId, is_read: false
+            }));
+            if (notifications.length > 0) {
+                const { error } = await supabase.from('notifications').insert(notifications);
+                if (error) console.error("Error inserting @all notifications:", error);
+            }
+        } else {
+            // Check individual users
+            const mentions = users.filter(u => content.toLowerCase().includes(`@${u.full_name?.toLowerCase()}`));
+            if (mentions.length > 0) {
+                const notifications = mentions.filter(m => m.id !== user.id).map(m => ({
+                    user_id: m.id, actor_id: user.id, type: 'mention',
+                    reference_id: messageId, is_read: false
+                }));
+                if (notifications.length > 0) {
+                    const { error } = await supabase.from('notifications').insert(notifications);
+                    if (error) console.error("Error inserting mention notifications:", error);
+                }
+            }
+        }
     };
 
     const toggleReaction = async (messageId, emoji) => {
@@ -200,16 +285,22 @@ const MessagesPage = () => {
         setEmojiPickerFor(null);
     };
 
-    const handleInputMentions = (e) => {
+    const handleInputMentions = (e, isNewTopic = false) => {
         const val = e.target.value;
-        setNewMessage(val);
+        if (isNewTopic) setNewTopicMessage(val);
+        else setNewMessage(val);
+
         const match = val.match(/@(\w*)$/);
         if (match) { setShowMentions(true); setMentionFilter(match[1].toLowerCase()); }
         else setShowMentions(false);
     };
 
-    const insertMention = (fullName) => {
-        setNewMessage(newMessage.replace(/@\w*$/, `@${fullName} `));
+    const insertMention = (name) => {
+        if (view === 'topics') {
+            setNewTopicMessage(newTopicMessage.replace(/@\w*$/, `@${name} `));
+        } else {
+            setNewMessage(newMessage.replace(/@\w*$/, `@${name} `));
+        }
         setShowMentions(false);
         inputRef.current?.focus();
     };
@@ -220,7 +311,7 @@ const MessagesPage = () => {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
                 {view === 'messages' && (
-                    <button onClick={() => setView('topics')} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
+                    <button onClick={() => { setView('topics'); setSearchParams({}); }} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
                         <ChevronLeft size={24} />
                     </button>
                 )}
@@ -243,10 +334,31 @@ const MessagesPage = () => {
                                     maxLength={50} required
                                 />
                                 <textarea
-                                    className="form-input" placeholder="First message..." rows="2"
-                                    value={newTopicMessage} onChange={(e) => setNewTopicMessage(e.target.value)}
+                                    ref={view === 'topics' ? inputRef : null}
+                                    className="form-input" placeholder="First message... (Use @Name or @all to tag)" rows="2"
+                                    value={newTopicMessage} onChange={(e) => handleInputMentions(e, true)}
                                     required style={{ resize: 'vertical' }}
                                 />
+
+                                {/* Mentions Dropdown inside of new topic form */}
+                                {showMentions && view === 'topics' && (
+                                    <div style={{ backgroundColor: 'white', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', maxHeight: 150, overflowY: 'auto' }}>
+                                        <div className="text-xs text-neutral-muted" style={{ padding: '0.5rem 1rem', backgroundColor: 'var(--neutral-50)' }}>Mention someone...</div>
+                                        {/* "All" Option */}
+                                        {"all".includes(mentionFilter) && (
+                                            <div onClick={() => insertMention('all')}
+                                                style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--neutral-100)' }}>
+                                                <span style={{ fontWeight: 600 }}>all</span> <span className="text-xs text-neutral-muted">(Notify Everyone)</span>
+                                            </div>
+                                        )}
+                                        {users.filter(u => u.full_name?.toLowerCase().includes(mentionFilter)).map(u => (
+                                            <div key={u.id} onClick={() => insertMention(u.full_name)}
+                                                style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--neutral-100)' }}>
+                                                <span style={{ fontWeight: 600 }}>{u.full_name}</span> <span className="text-xs text-neutral-muted">({u.role})</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                     <button type="submit" disabled={isCreatingTopic} className="btn btn-primary" style={{ display: 'flex', gap: '0.25rem' }}>
                                         <Plus size={16} /> Create Topic
@@ -261,7 +373,7 @@ const MessagesPage = () => {
                                 topics.map(topic => (
                                     <div
                                         key={topic.id}
-                                        onClick={() => { setActiveTopic(topic); setView('messages'); }}
+                                        onClick={() => { setActiveTopic(topic); setView('messages'); setSearchParams({ topic: topic.id }); }}
                                         style={{ padding: '1rem', borderBottom: '1px solid var(--neutral-100)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--neutral-50)'}
                                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -480,9 +592,16 @@ const MessagesPage = () => {
                         </div>
 
                         {/* Mentions Dropdown */}
-                        {showMentions && (
+                        {showMentions && view === 'messages' && (
                             <div style={{ backgroundColor: 'white', borderTop: '1px solid var(--neutral-200)', borderBottom: '1px solid var(--neutral-200)', maxHeight: 150, overflowY: 'auto' }}>
                                 <div className="text-xs text-neutral-muted" style={{ padding: '0.5rem 1rem', backgroundColor: 'var(--neutral-50)' }}>Mention a team member</div>
+                                {/* "All" Option */}
+                                {"all".includes(mentionFilter) && (
+                                    <div onClick={() => insertMention('all')}
+                                        style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--neutral-100)' }}>
+                                        <span style={{ fontWeight: 600 }}>all</span> <span className="text-xs text-neutral-muted">(Notify Everyone)</span>
+                                    </div>
+                                )}
                                 {users.filter(u => u.full_name?.toLowerCase().includes(mentionFilter)).map(u => (
                                     <div key={u.id} onClick={() => insertMention(u.full_name)}
                                         style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--neutral-100)' }}>
