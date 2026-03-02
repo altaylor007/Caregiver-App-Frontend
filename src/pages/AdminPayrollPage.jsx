@@ -264,7 +264,8 @@ const PayrollReportView = () => {
                 const firstName = r.full_name.split(' ')[0];
                 return `${firstName}\nHours ${r.total_hours}`;
             }).join('\n\n');
-            const smsBody = `Payroll ${previewData.start_date} to ${previewData.end_date}\n\n${smsLines}`;
+            const weDate = format(parseISO(previewData.end_date), 'MM-dd');
+            const smsBody = `WE ${weDate}\n\n${smsLines}`;
             window.location.href = `sms:+14125123099?body=${encodeURIComponent(smsBody)}`;
 
             setPreviewData(null);
