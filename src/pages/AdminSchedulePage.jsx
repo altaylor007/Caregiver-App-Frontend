@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, addWeeks, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
+import { Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, subDays, isSameDay, eachDayOfInterval, addWeeks, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
 const AdminSchedulePage = () => {
@@ -54,6 +54,9 @@ const AdminSchedulePage = () => {
     const [cellAssignShiftId, setCellAssignShiftId] = useState('');
     const [cellAssigning, setCellAssigning] = useState(false);
 
+    // Payroll lock state: array of { startStr, endStr } locked date ranges
+    const [lockedRanges, setLockedRanges] = useState([]);
+
     const fetchData = async () => {
         setLoading(true);
 
@@ -100,12 +103,31 @@ const AdminSchedulePage = () => {
         if (availabilityData.data) setAvailabilityResponses(availabilityData.data);
         if (templatesData.data) setShiftTemplates(templatesData.data);
 
+        // Fetch confirmed payroll reports and derive locked date ranges
+        const { data: payrollData } = await supabase
+            .from('payroll_reports')
+            .select('end_date')
+            .eq('status', 'confirmed');
+
+        if (payrollData) {
+            const ranges = payrollData.map(r => ({
+                // Lock range: prior Friday (end_date - 7) through Thursday (end_date - 1)
+                startStr: format(subDays(parseISO(r.end_date), 7), 'yyyy-MM-dd'),
+                endStr: format(subDays(parseISO(r.end_date), 1), 'yyyy-MM-dd')
+            }));
+            setLockedRanges(ranges);
+        }
+
         setLoading(false);
     };
 
     useEffect(() => {
         fetchData();
     }, [currentDate]);
+
+    // Helper: check if a date string falls within any confirmed payroll lock range
+    const isDateLocked = (dateStr) =>
+        lockedRanges.some(r => dateStr >= r.startStr && dateStr <= r.endStr);
 
     const openNewForm = () => {
         setIsFormOpen(true);
@@ -120,6 +142,10 @@ const AdminSchedulePage = () => {
     };
 
     const openEditForm = (shift) => {
+        if (isDateLocked(shift.date)) {
+            alert(`This shift on ${shift.date} is locked because it falls within a confirmed payroll period.\n\nTo edit it, an admin must first reinstate the payroll report from the Payroll page.`);
+            return;
+        }
         setIsFormOpen(true);
         setCurrentId(shift.id);
         setCurrentShift(shift);
@@ -877,21 +903,26 @@ const AdminSchedulePage = () => {
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                                         {dayShifts.map(shift => {
                                                             const isAssigned = !!shift.assigned_to || !!shift.custom_assigned_name;
+                                                            const locked = isDateLocked(shift.date);
                                                             const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
 
                                                             return (
-                                                                <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                                                <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', opacity: locked ? 0.65 : 1, cursor: locked ? 'not-allowed' : 'pointer' }}>
                                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.2rem' }}>
                                                                         <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', lineHeight: 1.2, wordBreak: 'break-word' }}>
                                                                             {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : '🚨 Open Shift'}
                                                                         </div>
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); handleDelete(shift.id); }}
-                                                                            style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem', flexShrink: 0 }}
-                                                                            title="Delete Shift"
-                                                                        >
-                                                                            <Trash2 size={12} />
-                                                                        </button>
+                                                                        {locked ? (
+                                                                            <Lock size={11} style={{ color: 'var(--neutral-400)', flexShrink: 0, marginTop: '0.1rem' }} title="Locked: payroll confirmed" />
+                                                                        ) : (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); handleDelete(shift.id); }}
+                                                                                style={{ background: 'none', border: 'none', color: 'var(--danger-500)', cursor: 'pointer', padding: '0.1rem', flexShrink: 0 }}
+                                                                                title="Delete Shift"
+                                                                            >
+                                                                                <Trash2 size={12} />
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                     <div style={{ fontWeight: 500, color: 'var(--neutral-800)', fontSize: '0.75rem', lineHeight: 1.2, wordBreak: 'break-word' }}>
                                                                         {shift.title}
