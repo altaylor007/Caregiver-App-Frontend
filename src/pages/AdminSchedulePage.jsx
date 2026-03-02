@@ -41,11 +41,12 @@ const AdminSchedulePage = () => {
 
     const [formError, setFormError] = useState('');
 
-    // Request Availability State
+    // Request Availability Modal State
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-    const [reqStartDate, setReqStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [reqEndDate, setReqEndDate] = useState(format(addWeeks(new Date(), 1), 'yyyy-MM-dd'));
-    const [reqMessage, setReqMessage] = useState('Please submit your availability for next week.');
+    const [reqStartDate, setReqStartDate] = useState('');
+    const [reqEndDate, setReqEndDate] = useState('');
+    const [reqMessage, setReqMessage] = useState('');
+    const [reqTargetUsers, setReqTargetUsers] = useState([]); // [] = all caregivers
     const [requesting, setRequesting] = useState(false);
 
     // Cell-click dialog state (availability matrix)
@@ -286,14 +287,16 @@ const AdminSchedulePage = () => {
             start_date: reqStartDate,
             end_date: reqEndDate,
             message: reqMessage,
+            target_user_ids: reqTargetUsers.length > 0 ? reqTargetUsers : null,
             created_by: (await supabase.auth.getUser()).data.user.id
         }]);
 
         if (error) {
             alert("Error sending request: " + error.message);
         } else {
-            alert("Availability request sent to all caregivers!");
+            alert(`Availability request sent to ${reqTargetUsers.length > 0 ? reqTargetUsers.length + " caregiver(s)" : "all caregivers"}!`);
             setIsRequestModalOpen(false);
+            setReqTargetUsers([]); // reset
         }
         setRequesting(false);
     };
@@ -562,6 +565,36 @@ const AdminSchedulePage = () => {
                                     <div className="form-group">
                                         <label className="form-label">To Date</label>
                                         <input type="date" className="form-input" value={reqEndDate} onChange={e => setReqEndDate(e.target.value)} required />
+                                    </div>
+                                </div>
+                                <div className="form-group" style={{ marginTop: '1rem' }}>
+                                    <label className="form-label">Send To</label>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--neutral-300)', padding: '0.5rem', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-app)' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600 }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={reqTargetUsers.length === 0}
+                                                onChange={() => setReqTargetUsers([])}
+                                            />
+                                            All Caregivers (Default)
+                                        </label>
+                                        <hr style={{ margin: '0.2rem 0', borderColor: 'var(--neutral-200)', borderStyle: 'solid', borderWidth: '1px 0 0 0' }} />
+                                        {caregivers.map(cg => (
+                                            <label key={cg.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={reqTargetUsers.includes(cg.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setReqTargetUsers(prev => [...prev, cg.id]);
+                                                        } else {
+                                                            setReqTargetUsers(prev => prev.filter(id => id !== cg.id));
+                                                        }
+                                                    }}
+                                                />
+                                                {cg.full_name || 'Unnamed'}
+                                            </label>
+                                        ))}
                                     </div>
                                 </div>
                                 <div className="form-group" style={{ marginTop: '1rem' }}>
