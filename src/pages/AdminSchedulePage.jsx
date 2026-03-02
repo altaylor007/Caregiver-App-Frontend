@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Trash2, Send, Check, MessageSquare } from 'lucide-react'; // Added MessageSquare
+import { Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, addWeeks, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
@@ -372,6 +372,9 @@ const AdminSchedulePage = () => {
                             </div>
                             <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
                                 <Plus size={16} /> New Shift
+                            </button>
+                            <button onClick={() => window.print()} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
+                                <Printer size={16} /> Print
                             </button>
                             <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-secondary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
                                 <CalendarIcon size={16} /> Request Availability

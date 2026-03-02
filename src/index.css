@@ -443,3 +443,69 @@ h3 {
   border-left-color: var(--primary-500);
   background-color: var(--primary-50);
 }
+
+/* Print Styles */
+@media print {
+  @page {
+    size: letter landscape;
+    margin: 0.5cm;
+  }
+
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+
+  /* Hide navigation and unnecessary UI elements */
+  .app-header,
+  .bottom-nav,
+  button,
+  select,
+  .btn {
+    display: none !important;
+  }
+
+  /* Expand main content */
+  .page-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  main {
+    margin-top: 0 !important;
+  }
+
+  /* Calendar structural changes for print */
+  .calendar-container {
+    border: none !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .calendar-wrapper {
+    min-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .calendar-day-cell {
+    border: 1px solid #000 !important;
+    min-height: 80px !important;
+    break-inside: avoid;
+  }
+
+  .shift-card-mini {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    border-left: 3px solid #000 !important;
+  }
+
+  /* Make sure the month title is centered and visible */
+  h2,
+  h3 {
+    text-align: center;
+    margin-bottom: 1rem !important;
+  }
+}
