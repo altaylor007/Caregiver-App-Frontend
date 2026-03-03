@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy, KeyRound } from 'lucide-react';
 
 const AdminCaregiversPage = () => {
@@ -61,8 +60,8 @@ const AdminCaregiversPage = () => {
         setSuccessMsg('');
 
         try {
-            // Invoke the edge function securely using the admin client which has the service role key
-            const { data, error: invokeError } = await supabaseAdmin.functions.invoke('create-caregiver', {
+            // Invoke the edge function using the standard authenticated client
+            const { data, error: invokeError } = await supabase.functions.invoke('create-caregiver', {
                 body: { email: newEmail, fullName: newName, password: passwordToUse }
             });
 
@@ -129,12 +128,12 @@ const AdminCaregiversPage = () => {
         const DEFAULT_PASSWORD = 'Agnes2026';
         if (!window.confirm(`Reset ${cg.full_name || cg.email}'s password to the default (${DEFAULT_PASSWORD})?`)) return;
 
-        const { error } = await supabaseAdmin.auth.admin.updateUserById(cg.id, {
-            password: DEFAULT_PASSWORD
+        const { data, error } = await supabase.functions.invoke('reset-password', {
+            body: { userId: cg.id, password: DEFAULT_PASSWORD }
         });
 
-        if (error) {
-            alert('Error resetting password: ' + error.message);
+        if (error || data?.error) {
+            alert('Error resetting password: ' + (error?.message || data?.error));
         } else {
             setSuccessMsg(`Password for ${cg.full_name || cg.email} reset to ${DEFAULT_PASSWORD} successfully.`);
             setTimeout(() => setSuccessMsg(''), 5000);
