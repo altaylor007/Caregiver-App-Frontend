@@ -10,6 +10,7 @@ const AdminCaregiversPage = () => {
     // State for new caregiver form
     const [newEmail, setNewEmail] = useState('');
     const [newName, setNewName] = useState('');
+    const [newPassword, setNewPassword] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
@@ -32,45 +33,65 @@ const AdminCaregiversPage = () => {
         fetchCaregivers();
     }, []);
 
-    const generateMessage = () => {
-        const authUrl = `${window.location.origin}/auth`;
-        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nAn administrator has created an account for you. You will shortly receive a separate system email from Supabase containing an invitation link. Please click that secure link to log in, and you will be prompted to set your password and provide your phone number.\n\nOnce logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nYou can access the regular login page at any time here: ${authUrl}\n\nThank you!`;
+    const generateRandomPassword = () => {
+        const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        let pwd = "";
+        for (let i = 0; i < 12; i++) {
+            pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        setNewPassword(pwd);
     };
 
-    const handleGmail = () => {
-        if (!newEmail) { setErrorMsg("Please enter an email address"); return; }
-        const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
-        const body = encodeURIComponent(generateMessage());
-        window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${newEmail}&su=${subject}&body=${body}`, '_blank');
-        setSuccessMsg("Draft created in Gmail!");
-        setErrorMsg('');
-        setNewEmail('');
-    };
+    const handleCreateUser = async (e) => {
+        e.preventDefault();
+        if (!newEmail || !newName) {
+            setErrorMsg("Please provide both email and full name.");
+            return;
+        }
 
-    const handleDefaultMail = () => {
-        if (!newEmail) { setErrorMsg("Please enter an email address"); return; }
-        const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
-        const body = encodeURIComponent(generateMessage());
-        window.location.href = `mailto:${newEmail}?subject=${subject}&body=${body}`;
-        setSuccessMsg("Email drafted! Please send it from your email client.");
-        setErrorMsg('');
-        setNewEmail('');
-    };
+        const passwordToUse = newPassword || 'Agnes2026'; // Default if empty
 
-    const handleSMS = () => {
-        if (!newEmail) { setErrorMsg("Please enter a phone number"); return; }
-        const body = encodeURIComponent(generateMessage());
-        window.location.href = `sms:${newEmail}?&body=${body}`;
-        setSuccessMsg("SMS draft created! Please send it from your messaging app.");
+        setIsSubmitting(true);
         setErrorMsg('');
-        setNewEmail('');
-    };
+        setSuccessMsg('');
 
-    const handleCopy = () => {
-        const body = generateMessage();
-        navigator.clipboard.writeText(body);
-        setSuccessMsg("Invitation copied to clipboard!");
-        setErrorMsg('');
+        try {
+            // 1. Create user in auth schema
+            const { data, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                email: newEmail,
+                password: passwordToUse,
+                email_confirm: true,
+                user_metadata: { full_name: newName }
+            });
+
+            if (authError) throw authError;
+
+            const userId = data.user.id;
+
+            // 2. Add requires_password_change in public.users table 
+            // The trigger might already insert the user on auth creation, so we need to UPDATE
+            const { error: updateError } = await supabaseAdmin
+                .from('users')
+                .update({
+                    full_name: newName,
+                    requires_password_change: true,
+                    role: 'caregiver'
+                })
+                .eq('id', userId);
+
+            if (updateError) throw updateError;
+
+            setSuccessMsg(`Success! Caregiver created. Email: ${newEmail} | Password: ${passwordToUse}`);
+            setNewEmail('');
+            setNewName('');
+            setNewPassword('');
+            fetchCaregivers();
+
+        } catch (error) {
+            setErrorMsg(error.message);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const toggleStatus = async (id, currentStatus) => {
@@ -133,7 +154,7 @@ const AdminCaregiversPage = () => {
             <div className="card">
                 <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <UserPlus size={20} className="text-primary" />
-                    Invite Caregiver
+                    Create Caregiver Account
                 </h3>
 
                 {errorMsg && (
@@ -149,37 +170,53 @@ const AdminCaregiversPage = () => {
                 )}
 
                 <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                    Send an invitation link via email or text message, or simply copy the link.
+                    Create an account for a new caregiver. They will use this email and temporary password to log in, and will be required to set their own password immediately.
                 </p>
 
-                <div style={{ marginBottom: '1.5rem' }}>
-                    <div className="form-group">
-                        <label className="form-label">Email Address or Phone Number</label>
+                <form onSubmit={handleCreateUser} style={{ marginBottom: '1.5rem' }}>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                        <label className="form-label">Full Name <span style={{ color: 'red' }}>*</span></label>
                         <input
                             type="text"
+                            required
                             className="form-input"
-                            placeholder="Email or phone number"
+                            placeholder="e.g. Jane Doe"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                        />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                        <label className="form-label">Email Address <span style={{ color: 'red' }}>*</span></label>
+                        <input
+                            type="email"
+                            required
+                            className="form-input"
+                            placeholder="e.g. jane@example.com"
                             value={newEmail}
                             onChange={(e) => setNewEmail(e.target.value)}
                         />
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                        <button type="button" onClick={handleGmail} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                            <Mail size={18} /> Open in Gmail
-                        </button>
-                        <button type="button" onClick={handleDefaultMail} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                            <Mail size={18} /> Default Mail App
-                        </button>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                        <label className="form-label">Temporary Password</label>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="Leave blank for default: Agnes2026"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                style={{ flex: 1 }}
+                            />
+                            <button type="button" onClick={generateRandomPassword} className="btn btn-secondary">
+                                Generate
+                            </button>
+                        </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                        <button type="button" onClick={handleSMS} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                            <MessageSquare size={18} /> Send text (SMS)
-                        </button>
-                        <button type="button" onClick={handleCopy} className="btn btn-primary" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                            <Copy size={18} /> Copy Invite Message Only
-                        </button>
-                    </div>
-                </div>
+
+                    <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ width: '100%', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                        <UserPlus size={18} /> {isSubmitting ? 'Creating...' : 'Create Caregiver Account'}
+                    </button>
+                </form>
             </div>
 
             <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Team Roster ({caregivers.length})</h3>

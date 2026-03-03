@@ -57,7 +57,8 @@ const UpdatePasswordPage = () => {
                     .update({
                         phone_number: formattedPhone,
                         phone: formattedPhone, // Keep legacy column updated
-                        sms_enabled: true
+                        sms_enabled: true,
+                        requires_password_change: false
                     })
                     .eq('id', user.id);
 
