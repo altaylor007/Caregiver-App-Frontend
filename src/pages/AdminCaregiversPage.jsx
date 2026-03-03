@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { supabase } from '../lib/supabase';
 import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy, KeyRound } from 'lucide-react';
 
 const AdminCaregiversPage = () => {
@@ -42,6 +42,11 @@ const AdminCaregiversPage = () => {
         setNewPassword(pwd);
     };
 
+    const generateMessage = (email, password) => {
+        const authUrl = `${window.location.origin}/auth`;
+        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nAn administrator has created an account for you. Your initial credentials are:\nEmail: ${email}\nTemporary Password: ${password}\n\nPlease click the secure link below to log in. You will be prompted to set your own password and provide your phone number.\n\nOnce logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nLogin here: ${authUrl}\n\nThank you!`;
+    };
+
     const handleCreateUser = async (e) => {
         e.preventDefault();
         if (!newEmail || !newName) {
@@ -56,32 +61,21 @@ const AdminCaregiversPage = () => {
         setSuccessMsg('');
 
         try {
-            // 1. Create user in auth schema
-            const { data, error: authError } = await supabaseAdmin.auth.admin.createUser({
-                email: newEmail,
-                password: passwordToUse,
-                email_confirm: true,
-                user_metadata: { full_name: newName }
+            // Invoke the edge function securely
+            const { data, error: invokeError } = await supabase.functions.invoke('create-caregiver', {
+                body: { email: newEmail, fullName: newName, password: passwordToUse }
             });
 
-            if (authError) throw authError;
+            if (invokeError) throw invokeError;
+            if (data?.error) throw new Error(data.error);
 
-            const userId = data.user.id;
+            setSuccessMsg(`Success! Caregiver created. Check your email app or click "Send Email Invite" below.`);
 
-            // 2. Add requires_password_change in public.users table 
-            // The trigger might already insert the user on auth creation, so we need to UPDATE
-            const { error: updateError } = await supabaseAdmin
-                .from('users')
-                .update({
-                    full_name: newName,
-                    requires_password_change: true,
-                    role: 'caregiver'
-                })
-                .eq('id', userId);
+            // Try to open the default mail client automatically
+            const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
+            const body = encodeURIComponent(generateMessage(newEmail, passwordToUse));
+            window.location.href = `mailto:${newEmail}?subject=${subject}&body=${body}`;
 
-            if (updateError) throw updateError;
-
-            setSuccessMsg(`Success! Caregiver created. Email: ${newEmail} | Password: ${passwordToUse}`);
             setNewEmail('');
             setNewName('');
             setNewPassword('');
@@ -89,6 +83,8 @@ const AdminCaregiversPage = () => {
 
         } catch (error) {
             setErrorMsg(error.message);
+            // Hide the actual token/auth errors from end user if it's too technical
+            console.error(error);
         } finally {
             setIsSubmitting(false);
         }
