@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { supabase } from '../lib/supabase';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy, KeyRound } from 'lucide-react';
 
 const AdminCaregiversPage = () => {
@@ -61,8 +61,8 @@ const AdminCaregiversPage = () => {
         setSuccessMsg('');
 
         try {
-            // Invoke the edge function securely
-            const { data, error: invokeError } = await supabase.functions.invoke('create-caregiver', {
+            // Invoke the edge function securely using the admin client which has the service role key
+            const { data, error: invokeError } = await supabaseAdmin.functions.invoke('create-caregiver', {
                 body: { email: newEmail, fullName: newName, password: passwordToUse }
             });
 
