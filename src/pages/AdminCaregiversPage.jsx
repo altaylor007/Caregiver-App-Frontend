@@ -14,6 +14,9 @@ const AdminCaregiversPage = () => {
     const [errorMsg, setErrorMsg] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
 
+    // State for email generation dialog
+    const [draftEmailInfo, setDraftEmailInfo] = useState(null);
+
     const fetchCaregivers = async () => {
         setLoading(true);
         const { data, error } = await supabase
@@ -68,12 +71,13 @@ const AdminCaregiversPage = () => {
             if (invokeError) throw invokeError;
             if (data?.error) throw new Error(data.error);
 
-            setSuccessMsg(`Success! Caregiver created. Check your email app or click "Send Email Invite" below.`);
+            setSuccessMsg(`Success! Caregiver created.`);
 
-            // Try to open the default mail client automatically
-            const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
-            const body = encodeURIComponent(generateMessage(newEmail, passwordToUse));
-            window.location.href = `mailto:${newEmail}?subject=${subject}&body=${body}`;
+            // Show the email draft dialog instead of auto-opening mailto
+            setDraftEmailInfo({
+                email: newEmail,
+                password: passwordToUse
+            });
 
             setNewEmail('');
             setNewName('');
@@ -142,8 +146,37 @@ const AdminCaregiversPage = () => {
 
     // Removed old handleRemoveCaregiver function
 
+    // Email dispatch handlers
+    const handleSendGmail = () => {
+        if (!draftEmailInfo) return;
+        const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
+        const body = encodeURIComponent(generateMessage(draftEmailInfo.email, draftEmailInfo.password));
+        window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${draftEmailInfo.email}&su=${subject}&body=${body}`, '_blank');
+        setDraftEmailInfo(null);
+    };
+
+    const handleSendDefaultMail = () => {
+        if (!draftEmailInfo) return;
+        const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
+        const body = encodeURIComponent(generateMessage(draftEmailInfo.email, draftEmailInfo.password));
+        window.location.href = `mailto:${draftEmailInfo.email}?subject=${subject}&body=${body}`;
+        setDraftEmailInfo(null);
+    };
+
+    const handleCopyToClipboard = async () => {
+        if (!draftEmailInfo) return;
+        const body = generateMessage(draftEmailInfo.email, draftEmailInfo.password);
+        try {
+            await navigator.clipboard.writeText(body);
+            alert('Email content copied to clipboard! You can now paste it into your preferred email or messaging app.');
+            setDraftEmailInfo(null);
+        } catch (err) {
+            alert('Failed to copy to clipboard. Please try another option.');
+        }
+    };
+
     return (
-        <div>
+        <div style={{ paddingBottom: '2rem' }}>
             <h2 style={{ marginBottom: '1rem' }}>Manage Caregivers</h2>
 
             <div className="card">
@@ -212,6 +245,41 @@ const AdminCaregiversPage = () => {
                         <UserPlus size={18} /> {isSubmitting ? 'Creating...' : 'Create Caregiver Account'}
                     </button>
                 </form>
+
+                {/* Email Draft Dialog */}
+                {draftEmailInfo && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        padding: '1.5rem',
+                        backgroundColor: 'var(--primary-50)',
+                        border: '1px solid var(--primary-200)',
+                        borderRadius: 'var(--radius-lg)'
+                    }}>
+                        <h4 style={{ color: 'var(--primary-800)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Mail size={18} /> Send Welcome Email
+                        </h4>
+                        <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
+                            Account successfully created for <strong>{draftEmailInfo.email}</strong>.
+                            How would you like to send them their temporary login credentials?
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
+                            <button onClick={handleSendGmail} className="btn btn-primary" style={{ backgroundColor: '#ea4335', color: 'white', border: 'none' }}>
+                                Open in Gmail
+                            </button>
+                            <button onClick={handleSendDefaultMail} className="btn btn-primary" style={{ backgroundColor: 'var(--primary-600)', color: 'white', border: 'none' }}>
+                                Default Mail App (e.g. Mac Mail)
+                            </button>
+                            <button onClick={handleCopyToClipboard} className="btn btn-outline" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', justifyContent: 'center' }}>
+                                <Copy size={16} /> Copy Text
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setDraftEmailInfo(null)}
+                            style={{ marginTop: '1rem', width: '100%', padding: '0.5rem', backgroundColor: 'transparent', border: 'none', color: 'var(--neutral-500)', cursor: 'pointer', fontSize: '0.875rem' }}>
+                            Skip for now
+                        </button>
+                    </div>
+                )}
             </div>
 
             <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Team Roster ({caregivers.length})</h3>
