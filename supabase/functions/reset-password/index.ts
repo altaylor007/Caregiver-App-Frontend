@@ -14,10 +14,10 @@ serve(async (req) => {
   }
 
   try {
-    const { userId, password } = await req.json();
-
-    if (!userId || !password) {
-      throw new Error('User ID and Password are required');
+    // Manually verify JWT so CORS OPTIONS requests don't fail at the gateway
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Missing Authorization header');
     }
 
     // Initialize Supabase admin client with service role key to bypass RLS
@@ -30,6 +30,15 @@ serve(async (req) => {
         persistSession: false,
       },
     });
+
+    // Check JWT validity 
+    const jwt = authHeader.replace('Bearer ', '');
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(jwt);
+    if (userError || !userData?.user) {
+      throw new Error('Invalid JWT: Unauthorized');
+    }
+
+    const { userId, password } = await req.json();
 
     // 1. Update the user password in auth.users
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {

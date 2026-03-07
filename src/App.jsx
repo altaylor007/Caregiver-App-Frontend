@@ -16,6 +16,7 @@ import ProfilePage from './pages/ProfilePage';
 import AdminRolesPage from './pages/AdminRolesPage';
 import AuthPage from './pages/AuthPage';
 import UpdatePasswordPage from './pages/UpdatePasswordPage';
+import LandingPage from './pages/LandingPage';
 
 import { useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -23,7 +24,7 @@ import AdminRoute from './components/AdminRoute';
 
 const ProtectedRoute = ({ children, requirePasswordCheck = true }) => {
   const { session, profile } = useAuth();
-  if (!session) return <Navigate to="/auth" replace />;
+  if (!session) return <Navigate to="/welcome" replace />;
   if (requirePasswordCheck && profile?.requires_password_change) {
     return <Navigate to="/update-password" replace />;
   }
@@ -47,6 +48,7 @@ function App() {
     <ThemeProvider>
       <Router>
         <Routes>
+          <Route path="/welcome" element={session ? <Navigate to="/" replace /> : <LandingPage />} />
           <Route path="/auth" element={session ? <Navigate to="/" replace /> : <AuthPage />} />
           <Route path="/update-password" element={<ProtectedRoute requirePasswordCheck={false}><UpdatePasswordPage /></ProtectedRoute>} />
 

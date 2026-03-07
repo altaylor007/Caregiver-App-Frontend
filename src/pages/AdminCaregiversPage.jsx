@@ -9,8 +9,10 @@ const AdminCaregiversPage = () => {
     // State for new caregiver form
     const [newEmail, setNewEmail] = useState('');
     const [newName, setNewName] = useState('');
+    const [newPhone, setNewPhone] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [sendingSMS, setSendingSMS] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
 
@@ -51,8 +53,22 @@ const AdminCaregiversPage = () => {
 
     const handleCreateUser = async (e) => {
         e.preventDefault();
-        if (!newEmail || !newName) {
-            setErrorMsg("Please provide both email and full name.");
+
+        const isEmailValid = newEmail && newEmail.includes('@');
+        const isPhoneProvided = newPhone && newPhone.trim().length > 0;
+
+        let targetEmail = newEmail;
+
+        if (!isEmailValid && isPhoneProvided) {
+            // If they provided a phone but no email, generate a dummy login email
+            targetEmail = `${newPhone.replace(/\D/g, '')}@act.login`;
+        } else if (!isEmailValid && !isPhoneProvided) {
+            setErrorMsg("Please provide an email address or a phone number.");
+            return;
+        }
+
+        if (!newName) {
+            setErrorMsg("Please provide a full name.");
             return;
         }
 
@@ -65,7 +81,7 @@ const AdminCaregiversPage = () => {
         try {
             // Invoke the edge function using the standard authenticated client
             const { data, error: invokeError } = await supabase.functions.invoke('create-caregiver', {
-                body: { email: newEmail, fullName: newName, password: passwordToUse }
+                body: { email: targetEmail, fullName: newName, password: passwordToUse }
             });
 
             if (invokeError) throw invokeError;
@@ -75,18 +91,19 @@ const AdminCaregiversPage = () => {
 
             // Show the email draft dialog instead of auto-opening mailto
             setDraftEmailInfo({
-                email: newEmail,
-                password: passwordToUse
+                email: targetEmail,
+                password: passwordToUse,
+                phone: newPhone
             });
 
             setNewEmail('');
             setNewName('');
+            setNewPhone('');
             setNewPassword('');
             fetchCaregivers();
 
         } catch (error) {
-            setErrorMsg(error.message);
-            // Hide the actual token/auth errors from end user if it's too technical
+            setErrorMsg("An error occurred. The user might already exist, or check console for details.");
             console.error(error);
         } finally {
             setIsSubmitting(false);
@@ -144,23 +161,56 @@ const AdminCaregiversPage = () => {
         }
     };
 
-    // Removed old handleRemoveCaregiver function
-
     // Email dispatch handlers
     const handleSendGmail = () => {
         if (!draftEmailInfo) return;
         const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
         const body = encodeURIComponent(generateMessage(draftEmailInfo.email, draftEmailInfo.password));
-        window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${draftEmailInfo.email}&su=${subject}&body=${body}`, '_blank');
+        window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${draftEmailInfo.email !== draftEmailInfo.email.includes('@act.login') ? draftEmailInfo.email : ''}&su=${subject}&body=${body}`, '_blank');
         setDraftEmailInfo(null);
     };
 
-    const handleSendDefaultMail = () => {
+    const handleSendHotmail = () => {
         if (!draftEmailInfo) return;
         const subject = encodeURIComponent("Invitation to join Agnes Care Team (ACT)");
         const body = encodeURIComponent(generateMessage(draftEmailInfo.email, draftEmailInfo.password));
-        window.location.href = `mailto:${draftEmailInfo.email}?subject=${subject}&body=${body}`;
+        const to = draftEmailInfo.email.includes('@act.login') ? '' : draftEmailInfo.email;
+        window.open(`https://outlook.live.com/mail/0/deeplink/compose?to=${to}&subject=${subject}&body=${body}`, '_blank');
         setDraftEmailInfo(null);
+    };
+
+    const handleSendSMS = async () => {
+        if (!draftEmailInfo) return;
+
+        let targetPhone = draftEmailInfo.phone || prompt("Enter caregiver's phone number (e.g. 555-123-4567):");
+        if (!targetPhone) return;
+
+        // ensure US country code
+        let formattedPhone = targetPhone.replace(/\D/g, '');
+        if (formattedPhone.length === 10) {
+            formattedPhone = `+1${formattedPhone}`;
+        } else if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) {
+            formattedPhone = `+${formattedPhone}`;
+        }
+
+        const body = generateMessage(draftEmailInfo.email, draftEmailInfo.password);
+
+        setSendingSMS(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('send-sms', {
+                body: { to: formattedPhone, messageBody: body }
+            });
+
+            if (error) throw error;
+            if (data?.error) throw new Error(data.error);
+
+            alert('SMS invitation sent successfully via Twilio!');
+            setDraftEmailInfo(null);
+        } catch (err) {
+            alert('Failed to send SMS: ' + err.message);
+        } finally {
+            setSendingSMS(false);
+        }
     };
 
     const handleCopyToClipboard = async () => {
@@ -168,7 +218,7 @@ const AdminCaregiversPage = () => {
         const body = generateMessage(draftEmailInfo.email, draftEmailInfo.password);
         try {
             await navigator.clipboard.writeText(body);
-            alert('Email content copied to clipboard! You can now paste it into your preferred email or messaging app.');
+            alert('Invite content copied to clipboard! You can now paste it into your preferred messaging app.');
             setDraftEmailInfo(null);
         } catch (err) {
             alert('Failed to copy to clipboard. Please try another option.');
@@ -198,7 +248,7 @@ const AdminCaregiversPage = () => {
                 )}
 
                 <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                    Create an account for a new caregiver. They will use this email and temporary password to log in, and will be required to set their own password immediately.
+                    Create an account for a new caregiver. You can provide an Email, a Phone number, or both. If no email is provided, a dummy login will be generated.
                 </p>
 
                 <form onSubmit={handleCreateUser} style={{ marginBottom: '1.5rem' }}>
@@ -213,16 +263,27 @@ const AdminCaregiversPage = () => {
                             onChange={(e) => setNewName(e.target.value)}
                         />
                     </div>
-                    <div className="form-group" style={{ marginBottom: '1rem' }}>
-                        <label className="form-label">Email Address <span style={{ color: 'red' }}>*</span></label>
-                        <input
-                            type="email"
-                            required
-                            className="form-input"
-                            placeholder="e.g. jane@example.com"
-                            value={newEmail}
-                            onChange={(e) => setNewEmail(e.target.value)}
-                        />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                        <div className="form-group">
+                            <label className="form-label">Email Address (Optional if Phone given)</label>
+                            <input
+                                type="email"
+                                className="form-input"
+                                placeholder="e.g. jane@example.com"
+                                value={newEmail}
+                                onChange={(e) => setNewEmail(e.target.value)}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Phone Number (Optional if Email given)</label>
+                            <input
+                                type="tel"
+                                className="form-input"
+                                placeholder="e.g. (555) 123-4567"
+                                value={newPhone}
+                                onChange={(e) => setNewPhone(e.target.value)}
+                            />
+                        </div>
                     </div>
                     <div className="form-group" style={{ marginBottom: '1rem' }}>
                         <label className="form-label">Temporary Password</label>
@@ -246,7 +307,7 @@ const AdminCaregiversPage = () => {
                     </button>
                 </form>
 
-                {/* Email Draft Dialog */}
+                {/* Email/Text Draft Dialog */}
                 {draftEmailInfo && (
                     <div style={{
                         marginTop: '1.5rem',
@@ -256,21 +317,23 @@ const AdminCaregiversPage = () => {
                         borderRadius: 'var(--radius-lg)'
                     }}>
                         <h4 style={{ color: 'var(--primary-800)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Mail size={18} /> Send Welcome Email
+                            <Mail size={18} /> Send Welcome Invitation
                         </h4>
                         <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                            Account successfully created for <strong>{draftEmailInfo.email}</strong>.
-                            How would you like to send them their temporary login credentials?
+                            Account successfully created! How would you like to send them their temporary login credentials?
                         </p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                             <button onClick={handleSendGmail} className="btn btn-primary" style={{ backgroundColor: '#ea4335', color: 'white', border: 'none' }}>
                                 Open in Gmail
                             </button>
-                            <button onClick={handleSendDefaultMail} className="btn btn-primary" style={{ backgroundColor: 'var(--primary-600)', color: 'white', border: 'none' }}>
-                                Default Mail App (e.g. Mac Mail)
+                            <button onClick={handleSendHotmail} className="btn btn-primary" style={{ backgroundColor: '#0078d4', color: 'white', border: 'none' }}>
+                                Open in Hotmail / Outlook
+                            </button>
+                            <button onClick={handleSendSMS} disabled={sendingSMS} className="btn btn-secondary" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', justifyContent: 'center' }}>
+                                <MessageSquare size={16} /> {sendingSMS ? 'Sending SMS...' : 'Send via SMS Text'}
                             </button>
                             <button onClick={handleCopyToClipboard} className="btn btn-outline" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', justifyContent: 'center' }}>
-                                <Copy size={16} /> Copy Text
+                                <Copy size={16} /> Copy Text Only
                             </button>
                         </div>
                         <button

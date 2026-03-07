@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Set CORS headers so the browser can make requests to this function
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,10 +16,10 @@ serve(async (req) => {
   }
 
   try {
-    const { email, fullName, password } = await req.json();
-
-    if (!email || !fullName) {
-      throw new Error('Email and Full Name are required');
+    // Manually verify JWT so CORS OPTIONS requests don't fail at the gateway
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Missing Authorization header');
     }
 
     // Initialize Supabase admin client with service role key to bypass RLS
@@ -30,6 +32,15 @@ serve(async (req) => {
         persistSession: false,
       },
     });
+
+    // Check JWT validity 
+    const jwt = authHeader.replace('Bearer ', '');
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(jwt);
+    if (userError || !userData?.user) {
+      throw new Error('Invalid JWT: Unauthorized');
+    }
+
+    const { email, fullName, password } = await req.json();
 
     // 1. Create the user in the auth.users table
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -46,18 +57,31 @@ serve(async (req) => {
     const userId = authData.user.id;
 
     // 2. Update the user profile in the public.users table (trigger inserts it shortly after)
-    // Set their role, requires_password_change flag, and full name.
-    const { error: profileError } = await supabaseAdmin
-      .from('users')
-      .update({
-        full_name: fullName,
-        role: 'caregiver',
-        requires_password_change: true,
-      })
-      .eq('id', userId);
+    // Add a retry loop because the database trigger might take a few milliseconds to insert the row
+    let profileUpdated = false;
+    let lastError = null;
 
-    if (profileError) {
-      throw profileError;
+    for (let attempts = 0; attempts < 5; attempts++) {
+      const { error: profileError } = await supabaseAdmin
+        .from('users')
+        .update({
+          full_name: fullName,
+          role: 'caregiver',
+          requires_password_change: true,
+        })
+        .eq('id', userId);
+
+      if (!profileError) {
+        profileUpdated = true;
+        break;
+      }
+
+      lastError = profileError;
+      await wait(500); // Wait 500ms before retrying
+    }
+
+    if (!profileUpdated) {
+      throw lastError || new Error("Failed to update user profile after multiple attempts.");
     }
 
     return new Response(
