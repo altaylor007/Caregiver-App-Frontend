@@ -23,7 +23,21 @@ const AdminSchedulePage = () => {
     const [loading, setLoading] = useState(true);
 
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'availability'
+
+    // Initialize view mode from URL to persist across reloads
+    const [viewMode, setViewModeState] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('view') === 'availability' ? 'availability' : 'calendar';
+    });
+
+    // Helper to update both state and URL
+    const setViewMode = (mode) => {
+        setViewModeState(mode);
+        const params = new URLSearchParams(window.location.search);
+        params.set('view', mode);
+        window.history.replaceState({}, '', `${window.location.pathname}?${params}`);
+    };
+
     const [filterCaregiverId, setFilterCaregiverId] = useState(''); // Specific caregiver or empty for all
 
     // Form State
@@ -49,11 +63,9 @@ const AdminSchedulePage = () => {
     const [reqTargetUsers, setReqTargetUsers] = useState([]); // [] = all caregivers
     const [requesting, setRequesting] = useState(false);
 
-    // Cell-click dialog state (availability matrix)
-    const [cellDialog, setCellDialog] = useState(null); // { caregiver, dayStr, availStatus, shifts }
-    const [cellAssignShiftId, setCellAssignShiftId] = useState('');
-    const [cellAssigning, setCellAssigning] = useState(false);
+    // Cell hover state (availability matrix popup)
     const [hoveredShiftId, setHoveredShiftId] = useState(null);
+    const [hoveredAvailCell, setHoveredAvailCell] = useState(null);
 
     // Payroll lock state: array of { startStr, endStr } locked date ranges
     const [lockedRanges, setLockedRanges] = useState([]);
@@ -781,7 +793,7 @@ const AdminSchedulePage = () => {
                                             <td style={{ padding: '0.4rem 0.75rem', position: 'sticky', left: 0, background: idx % 2 === 0 ? 'var(--bg-card)' : 'var(--neutral-50)', zIndex: 1, fontWeight: 600, color: 'var(--neutral-700)', whiteSpace: 'nowrap', borderRight: '2px solid var(--neutral-200)' }}>
                                                 {cg.full_name || 'Unnamed'}
                                             </td>
-                                            {daysInMonth.map(day => {
+                                            {daysInMonth.map((day, dayIdx) => {
                                                 const dayStr = format(day, 'yyyy-MM-dd');
                                                 const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
                                                 const openShiftsOnDay = shifts.filter(s => s.date === dayStr && !s.assigned_to && !s.custom_assigned_name);
@@ -801,20 +813,25 @@ const AdminSchedulePage = () => {
                                                     title += ` | Note: "${avail.notes}"`;
                                                 }
 
-                                                const hasOpenShift = openShiftsOnDay.length > 0;
+                                                const validOpenShifts = openShiftsOnDay.filter(shift => {
+                                                    const shiftHour = new Date(shift.start_time).getHours();
+                                                    if (!avail || avail.status === 'unavailable') return false;
+                                                    if (avail.status === 'available') return true;
+                                                    if (avail.status === 'available_morning' && shiftHour < 12) return true;
+                                                    if (avail.status === 'available_evening' && shiftHour >= 12) return true;
+                                                    return false;
+                                                });
+                                                const hasValidOpenShift = validOpenShifts.length > 0;
                                                 const canAssign = avail && avail.status !== 'unavailable';
+                                                const cellId = `${cg.id}_${dayStr}`;
+
+                                                // Check if this specific cell is currently hovered to elevate its td's z-index
+                                                const isCellHovered = hoveredAvailCell === cellId;
 
                                                 return (
-                                                    <td key={dayStr} style={{ padding: '0.15rem 0.1rem', textAlign: 'center' }}>
+                                                    <td key={dayStr} style={{ padding: '0.15rem 0.1rem', textAlign: 'center', position: 'relative', zIndex: isCellHovered ? 50 : 1 }}>
                                                         <div
-                                                            title={`${cg.full_name}: ${title}${hasOpenShift ? ` | ${openShiftsOnDay.length} open shift(s) — click to assign` : ''} `}
-                                                            onClick={() => {
-                                                                if (avail && avail.status !== 'unavailable') {
-                                                                    setCellDialog({ caregiver: cg, dayStr, availStatus: avail?.status || null, dayShifts: shifts.filter(s => s.date === dayStr) });
-                                                                    setCellAssignShiftId(openShiftsOnDay[0]?.id || '');
-                                                                    setCellAssigning(false);
-                                                                }
-                                                            }}
+                                                            title={`${cg.full_name}: ${title}${hasValidOpenShift ? ` | ${validOpenShifts.length} matching open shift(s)` : ''}`}
                                                             style={{
                                                                 width: '100%',
                                                                 minWidth: '24px',
@@ -827,13 +844,21 @@ const AdminSchedulePage = () => {
                                                                 fontSize: '0.65rem',
                                                                 fontWeight: 700,
                                                                 cursor: canAssign ? 'pointer' : 'default',
-                                                                border: hasOpenShift ? '2px solid var(--warning-500)' : (isToday ? '2px solid var(--primary-400)' : '1px solid transparent'),
+                                                                border: hasValidOpenShift ? '2px solid var(--warning-500)' : (isToday ? '2px solid var(--primary-400)' : '1px solid transparent'),
                                                                 transition: 'transform 0.1s',
                                                                 color: avail?.status === 'unavailable' ? 'white' : 'var(--neutral-800)',
                                                                 position: 'relative'
                                                             }}
-                                                            onMouseEnter={e => { if (canAssign) e.currentTarget.style.transform = 'scale(1.15)'; }}
-                                                            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                                                            onMouseEnter={e => {
+                                                                if (canAssign) {
+                                                                    e.currentTarget.style.transform = 'scale(1.15)';
+                                                                    setHoveredAvailCell(cellId);
+                                                                }
+                                                            }}
+                                                            onMouseLeave={e => {
+                                                                e.currentTarget.style.transform = 'scale(1)';
+                                                                setHoveredAvailCell(null);
+                                                            }}
                                                         >
                                                             {emoji}
                                                             {hasNote && (
@@ -842,6 +867,117 @@ const AdminSchedulePage = () => {
                                                                     fill="currentColor"
                                                                     style={{ position: 'absolute', top: '-4px', right: '-4px', backgroundColor: 'white', borderRadius: '50%', padding: '1px', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', color: 'var(--primary-600)' }}
                                                                 />
+                                                            )}
+                                                            {hoveredAvailCell === cellId && (
+                                                                <div
+                                                                    style={{
+                                                                        position: 'absolute',
+                                                                        ...(idx < 4 ? { top: '100%', paddingTop: '0.4rem' } : { bottom: '100%', paddingBottom: '0.4rem' }),
+                                                                        ...(dayIdx < 4
+                                                                            ? { left: '0', transform: 'none' }
+                                                                            : { left: '50%', transform: 'translateX(-50%)' }),
+                                                                        zIndex: 50,
+                                                                        width: '240px'
+                                                                    }}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                >
+                                                                    <div
+                                                                        className="card"
+                                                                        style={{
+                                                                            width: '100%',
+                                                                            padding: '0.6rem',
+                                                                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
+                                                                            cursor: 'default',
+                                                                            border: '1px solid var(--primary-200)',
+                                                                            backgroundColor: 'var(--bg-app)',
+                                                                            margin: 0,
+                                                                            textAlign: 'left'
+                                                                        }}
+                                                                    >
+                                                                        <div style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.5rem', borderBottom: '1px solid var(--neutral-200)', paddingBottom: '0.25rem', color: 'var(--primary-700)' }}>
+                                                                            {cg.full_name} ({format(day, 'MMM d')})
+                                                                        </div>
+
+                                                                        {validOpenShifts.length === 0 ? (
+                                                                            <div style={{ color: 'var(--neutral-500)', fontSize: '0.7rem', padding: '0.25rem', lineHeight: 1.4 }}>
+                                                                                {openShiftsOnDay.length > 0
+                                                                                    ? "No open shifts match this caregiver's availability."
+                                                                                    : "No open shifts on this day."}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', maxHeight: '160px', overflowY: 'auto' }}>
+                                                                                {validOpenShifts.map(shift => (
+                                                                                    <button
+                                                                                        key={shift.id}
+                                                                                        onClick={async (e) => {
+                                                                                            e.stopPropagation();
+                                                                                            const { error } = await supabase.from('shifts').update({ assigned_to: cg.id }).eq('id', shift.id);
+                                                                                            if (!error) {
+                                                                                                setShifts(prevShifts => prevShifts.map(s => {
+                                                                                                    if (s.id === shift.id) {
+                                                                                                        return { ...s, assigned_to: cg.id, users: { full_name: cg.full_name, first_name: cg.first_name } };
+                                                                                                    }
+                                                                                                    return s;
+                                                                                                }));
+                                                                                                setHoveredAvailCell(null);
+                                                                                            } else {
+                                                                                                alert('Error assigning shift: ' + error.message);
+                                                                                            }
+                                                                                        }}
+                                                                                        title={`Assign to ${shift.title}`}
+                                                                                        style={{
+                                                                                            padding: '0.4rem',
+                                                                                            fontSize: '0.75rem',
+                                                                                            display: 'flex',
+                                                                                            flexDirection: 'column',
+                                                                                            alignItems: 'flex-start',
+                                                                                            gap: '0.2rem',
+                                                                                            border: '1px solid var(--neutral-200)',
+                                                                                            background: 'white',
+                                                                                            borderRadius: 'var(--radius-sm)',
+                                                                                            cursor: 'pointer',
+                                                                                            width: '100%',
+                                                                                            color: 'var(--neutral-800)'
+                                                                                        }}
+                                                                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--primary-50)'}
+                                                                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
+                                                                                    >
+                                                                                        <div style={{ fontWeight: 600 }}>{shift.title}</div>
+                                                                                        <div style={{ fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
+                                                                                            {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                                                        </div>
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        <div style={{ borderTop: '1px solid var(--neutral-200)', paddingTop: '0.4rem', marginTop: '0.4rem' }}>
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setHoveredAvailCell(null);
+                                                                                    openNewForm();
+                                                                                    setDate(dayStr);
+                                                                                    setAssignedTo(cg.id);
+                                                                                }}
+                                                                                style={{
+                                                                                    padding: '0.3rem',
+                                                                                    fontSize: '0.7rem',
+                                                                                    width: '100%',
+                                                                                    background: 'transparent',
+                                                                                    border: 'none',
+                                                                                    color: 'var(--primary-600)',
+                                                                                    cursor: 'pointer',
+                                                                                    fontWeight: 600,
+                                                                                    textAlign: 'center'
+                                                                                }}
+                                                                                onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                                                                                onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                                                                            >
+                                                                                + Create New Shift
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     </td>
@@ -853,95 +989,8 @@ const AdminSchedulePage = () => {
                             </table>
                         )}
                         <p style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.75rem' }}>
-                            💡 Click any available caregiver cell to view shifts for that day and assign.
+                            💡 Hover over any available caregiver cell to view and assign open shifts for that day.
                         </p>
-
-                        {/* Cell Click Dialog */}
-                        {cellDialog && (
-                            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-                                <div className="card" style={{ width: '100%', maxWidth: '520px', margin: 'auto' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                        <h3 style={{ margin: 0 }}>{format(new Date(cellDialog.dayStr + 'T12:00:00'), 'EEEE, MMMM d')}</h3>
-                                        <button onClick={() => setCellDialog(null)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--neutral-500)' }}>&times;</button>
-                                    </div>
-
-                                    <div style={{ marginBottom: '1rem', padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--primary-50)', fontSize: '0.875rem' }}>
-                                        <strong>{cellDialog.caregiver.full_name}</strong> is&nbsp;
-                                        {cellDialog.availStatus === 'available' ? '✅ available all day' :
-                                            cellDialog.availStatus === 'available_morning' ? '🌅 available in the morning' :
-                                                cellDialog.availStatus === 'available_evening' ? '🌃 available in the evening' : '❓ status unknown'}
-                                    </div>
-
-                                    <h4 style={{ marginBottom: '0.5rem', color: 'var(--neutral-700)' }}>Shifts on this day</h4>
-                                    {cellDialog.dayShifts.length === 0 ? (
-                                        <p style={{ color: 'var(--neutral-500)', fontSize: '0.875rem' }}>No shifts created for this day yet.</p>
-                                    ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-                                            {cellDialog.dayShifts.map(s => {
-                                                const isAssigned = !!s.assigned_to || !!s.custom_assigned_name;
-                                                return (
-                                                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', backgroundColor: isAssigned ? 'var(--success-50)' : 'var(--warning-50)', border: `1px solid ${isAssigned ? 'var(--success-200)' : 'var(--warning-300)'} ` }}>
-                                                        <div>
-                                                            <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.title}</div>
-                                                            <div style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
-                                                                {format(new Date(`1970-01-01T${s.start_time.substring(11, 16)} `), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)} `), 'h:mm a')}
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)' }}>
-                                                            {isAssigned ? (s.users?.full_name || s.custom_assigned_name || 'Assigned') : 'Open'}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {cellDialog.dayShifts.some(s => !s.assigned_to && !s.custom_assigned_name) && (
-                                        <div style={{ borderTop: '1px solid var(--neutral-200)', paddingTop: '1rem', marginTop: '0.5rem' }}>
-                                            <h4 style={{ marginBottom: '0.5rem', color: 'var(--neutral-700)' }}>Assign {cellDialog.caregiver.full_name} to a shift</h4>
-                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                <select
-                                                    className="form-input"
-                                                    style={{ flex: 1 }}
-                                                    value={cellAssignShiftId}
-                                                    onChange={e => setCellAssignShiftId(e.target.value)}
-                                                >
-                                                    <option value="">-- Select a shift --</option>
-                                                    {cellDialog.dayShifts.filter(s => !s.assigned_to && !s.custom_assigned_name).map(s => (
-                                                        <option key={s.id} value={s.id}>
-                                                            {s.title} ({format(new Date(`1970-01-01T${s.start_time.substring(11, 16)} `), 'h:mm a')} – {format(new Date(`1970-01-01T${s.end_time.substring(11, 16)} `), 'h:mm a')})
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                                <button
-                                                    className="btn btn-primary"
-                                                    disabled={!cellAssignShiftId || cellAssigning}
-                                                    onClick={async () => {
-                                                        if (!cellAssignShiftId) return;
-                                                        setCellAssigning(true);
-                                                        const { error } = await supabase.from('shifts').update({ assigned_to: cellDialog.caregiver.id }).eq('id', cellAssignShiftId);
-                                                        setCellAssigning(false);
-                                                        if (!error) {
-                                                            setCellDialog(null);
-                                                            fetchData();
-                                                        } else {
-                                                            alert('Error assigning shift: ' + error.message);
-                                                        }
-                                                    }}
-                                                >
-                                                    {cellAssigning ? 'Assigning...' : 'Assign'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                                        <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setCellDialog(null)}>Close</button>
-                                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setCellDialog(null); openNewForm(); setDate(cellDialog.dayStr); setAssignedTo(cellDialog.caregiver.id); }}>Create New Shift for This Day</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 ) : (
                     /* ========== CALENDAR VIEW ========== */
