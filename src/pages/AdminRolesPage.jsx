@@ -16,11 +16,11 @@ const AdminRolesPage = () => {
 
     const fetchUsers = async () => {
         setLoading(true);
-        // Non-admin users (caregivers + managers) — for role management
+        // All users except the current admin — for role management
         const { data: nonAdmins, error } = await supabase
             .from('users')
-            .select('id, full_name, email, role, avatar_url, payroll_report_contact, phone')
-            .neq('role', 'admin')
+            .select('id, full_name, email, role, avatar_url, payroll_report_contact, phone, is_caregiver')
+            .neq('id', isSuperAdmin ? (await supabase.auth.getUser()).data.user?.id : null)
             .order('full_name', { ascending: true });
 
         // Admin + manager users — for payroll contact toggle
@@ -40,23 +40,39 @@ const AdminRolesPage = () => {
         fetchUsers();
     }, []);
 
-    const toggleRole = async (userId, currentRole, userName) => {
-        const newRole = currentRole === 'manager' ? 'caregiver' : 'manager';
-        const actionStr = newRole === 'manager'
-            ? `elevate ${userName || 'this user'} to Manager? They will gain full administrative access.`
-            : `revoke Manager access from ${userName || 'this user'} and return them to Caregiver?`;
+    const changeRole = async (userId, userName, newRole) => {
+        const actionStr = `change ${userName || 'this user'}'s role to ${newRole.charAt(0).toUpperCase() + newRole.slice(1)}?`;
 
         if (!window.confirm(`Are you sure you want to ${actionStr}`)) return;
 
+        // If the new role is 'caregiver', we must ensure is_caregiver is true
+        const updateData = { role: newRole };
+        if (newRole === 'caregiver') {
+            updateData.is_caregiver = true;
+        }
+
         const { error } = await supabase
             .from('users')
-            .update({ role: newRole })
+            .update(updateData)
             .eq('id', userId);
 
         if (!error) {
             fetchUsers();
         } else {
             alert("Error updating role: " + error.message);
+        }
+    };
+
+    const toggleCaregiverStatus = async (userId, currentStatus) => {
+        const { error } = await supabase
+            .from('users')
+            .update({ is_caregiver: !currentStatus })
+            .eq('id', userId);
+
+        if (!error) {
+            fetchUsers();
+        } else {
+            alert("Error updating caregiver status: " + error.message);
         }
     };
 
@@ -93,7 +109,7 @@ const AdminRolesPage = () => {
             </div>
 
             <p className="text-sm text-neutral-600" style={{ marginBottom: '2rem' }}>
-                Elevate caregivers to <strong>Manager</strong> status to grant them administrative privileges over the schedule, payroll, and team roster.
+                Elevate caregivers to <strong>Manager</strong> or <strong>Admin</strong> status to grant them administrative privileges over the schedule, payroll, and team roster.
             </p>
 
             {/* ── Payroll Contact Section ── */}
@@ -160,32 +176,67 @@ const AdminRolesPage = () => {
                                 <div>
                                     <h3 style={{ margin: 0, fontSize: '1rem' }}>{u.full_name || 'Unnamed User'}</h3>
                                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--neutral-500)' }}>{u.email}</p>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', padding: '0.1rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: 600, backgroundColor: u.role === 'manager' ? 'var(--primary-100)' : 'var(--neutral-100)', color: u.role === 'manager' ? 'var(--primary-700)' : 'var(--neutral-600)' }}>
-                                        {u.role === 'manager' ? <><ShieldCheck size={12} /> Manager</> : 'Caregiver'}
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', padding: '0.1rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: 600, backgroundColor: u.role === 'admin' ? 'var(--primary-200)' : u.role === 'manager' ? 'var(--primary-100)' : 'var(--neutral-100)', color: u.role === 'admin' ? 'var(--primary-800)' : u.role === 'manager' ? 'var(--primary-700)' : 'var(--neutral-600)' }}>
+                                        {u.role === 'admin' ? <><ShieldAlert size={12} /> Admin</> : u.role === 'manager' ? <><ShieldCheck size={12} /> Manager</> : 'Caregiver'}
+                                    </div>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', marginLeft: '0.5rem', padding: '0.1rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: 600, backgroundColor: u.is_caregiver ? 'var(--success-100)' : 'var(--neutral-100)', color: u.is_caregiver ? 'var(--success-700)' : 'var(--neutral-600)' }}>
+                                        {u.is_caregiver ? 'Acts as Caregiver' : 'Not a Caregiver'}
                                     </div>
                                 </div>
                             </div>
 
-                            <button
-                                onClick={() => toggleRole(u.id, u.role, u.full_name)}
-                                className="btn"
-                                style={{
-                                    padding: '0.4rem 0.75rem',
-                                    fontSize: '0.8rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.4rem',
-                                    backgroundColor: u.role === 'manager' ? 'var(--danger-50)' : 'var(--primary-50)',
-                                    color: u.role === 'manager' ? 'var(--danger-700)' : 'var(--primary-700)',
-                                    border: `1px solid ${u.role === 'manager' ? 'var(--danger-200)' : 'var(--primary-200)'}`
-                                }}
-                            >
-                                {u.role === 'manager' ? (
-                                    <><ShieldAlert size={16} /> Revoke Manager</>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                {/* Caregiver Toggle */}
+                                {u.role !== 'caregiver' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--neutral-500)', textTransform: 'uppercase' }}>Caregiver</span>
+                                        <button
+                                            onClick={() => toggleCaregiverStatus(u.id, u.is_caregiver)}
+                                            style={{
+                                                width: '36px', height: '20px',
+                                                backgroundColor: u.is_caregiver ? 'var(--success-500)' : 'var(--neutral-300)',
+                                                borderRadius: '10px', position: 'relative',
+                                                cursor: 'pointer', transition: 'background-color 0.2s',
+                                                border: 'none', padding: 0, flexShrink: 0
+                                            }}
+                                            aria-label="Toggle Caregiver Status"
+                                        >
+                                            <div style={{
+                                                width: '16px', height: '16px', backgroundColor: 'white',
+                                                borderRadius: '50%', position: 'absolute', top: '2px',
+                                                left: u.is_caregiver ? '18px' : '2px',
+                                                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                            }} />
+                                        </button>
+                                    </div>
                                 ) : (
-                                    <><ShieldCheck size={16} /> Make Manager</>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem', width: '36px' }}>
+                                        {/* Empty space placeholder to keep alignment consistent */}
+                                    </div>
                                 )}
-                            </button>
+
+                                {/* Role Select */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                                    <span style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--neutral-500)', textTransform: 'uppercase' }}>Role</span>
+                                    <select
+                                        value={u.role}
+                                        onChange={(e) => changeRole(u.id, u.full_name, e.target.value)}
+                                        className="form-input"
+                                        style={{
+                                            width: '110px',
+                                            padding: '0.3rem 1.5rem 0.3rem 0.5rem',
+                                            fontSize: '0.75rem',
+                                            backgroundColor: u.role === 'admin' ? 'var(--primary-50)' : u.role === 'manager' ? 'var(--primary-50)' : 'var(--neutral-50)',
+                                            color: u.role === 'admin' ? 'var(--primary-800)' : u.role === 'manager' ? 'var(--primary-700)' : 'var(--neutral-700)',
+                                            border: `1px solid ${u.role === 'admin' ? 'var(--primary-300)' : u.role === 'manager' ? 'var(--primary-200)' : 'var(--neutral-200)'}`
+                                        }}
+                                    >
+                                        <option value="caregiver">Caregiver</option>
+                                        <option value="manager">Manager</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                     ))}
                 </div>

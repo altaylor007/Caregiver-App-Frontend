@@ -25,7 +25,7 @@ const AdminCaregiversPage = () => {
         const { data, error } = await supabase
             .from('users')
             .select('id, full_name, first_name, last_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled, avatar_url')
-            .eq('role', 'caregiver')
+            .eq('is_caregiver', true)
             .order('created_at', { ascending: false });
 
         if (data) setCaregivers(data);
@@ -234,8 +234,9 @@ const AdminCaregiversPage = () => {
     };
 
     const handlePrintRoster = () => {
-        // Sort caregivers alphabetically by last name, then first name
-        const sorted = [...caregivers].sort((a, b) => {
+        // Filter out inactive users, then sort alphabetically by last name, then first name
+        const activeCaregivers = caregivers.filter(cg => cg.status === 'active');
+        const sorted = activeCaregivers.sort((a, b) => {
             const lastA = (a.last_name || a.full_name || '').toLowerCase();
             const lastB = (b.last_name || b.full_name || '').toLowerCase();
             if (lastA !== lastB) return lastA.localeCompare(lastB);

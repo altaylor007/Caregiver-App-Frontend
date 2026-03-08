@@ -51,8 +51,7 @@ const SchedulePage = () => {
         if (data) setShifts(data);
         if (error) console.error("Error fetching shifts:", error);
 
-        // Fetch active caregivers for the trade dropdown
-        const cgRes = await supabase.from('users').select('id, full_name, first_name').eq('role', 'caregiver').eq('status', 'active');
+        const cgRes = await supabase.from('users').select('id, full_name, first_name').eq('is_caregiver', true).eq('status', 'active');
         if (cgRes.data) setCaregivers(cgRes.data.filter(c => c.id !== user?.id));
 
         // Fetch incoming pending trades

@@ -70,6 +70,7 @@ serve(async (req) => {
           first_name: firstName || null,
           last_name: lastName || null,
           role: 'caregiver',
+          is_caregiver: true,
           requires_password_change: true,
         })
         .eq('id', userId);

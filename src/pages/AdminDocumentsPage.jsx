@@ -163,7 +163,7 @@ const AdminDocumentsPage = () => {
 
             // Dispatch Notifications to all caregivers if this is a new document
             if (!error) {
-                const { data: users } = await supabase.from('users').select('id').eq('role', 'caregiver');
+                const { data: users } = await supabase.from('users').select('id').eq('is_caregiver', true);
                 if (users && users.length > 0) {
                     const { data: { user } } = await supabase.auth.getUser();
                     const notifications = users.map(u => ({

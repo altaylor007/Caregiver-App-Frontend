@@ -134,7 +134,7 @@ const AdminSchedulePage = () => {
         const caregiversData = await supabase
             .from('users')
             .select('id, full_name, first_name, last_name')
-            .eq('role', 'caregiver')
+            .eq('is_caregiver', true)
             .eq('status', 'active');
 
         // Fetch availability responses for this entire month (all statuses for full picture)

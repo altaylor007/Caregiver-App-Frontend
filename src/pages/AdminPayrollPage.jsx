@@ -37,7 +37,7 @@ const HoursView = () => {
         const { data: users } = await supabase
             .from('users')
             .select('id, full_name')
-            .eq('role', 'caregiver')
+            .eq('is_caregiver', true)
             .eq('status', 'active');
 
         // Fetch all shifts in this week range
@@ -200,7 +200,7 @@ const PayrollReportView = () => {
 
             const { data: users, error: uError } = await supabase
                 .from('users').select('id, full_name')
-                .eq('role', 'caregiver').eq('status', 'active').eq('payroll_enabled', true);
+                .eq('is_caregiver', true).eq('status', 'active').eq('payroll_enabled', true);
             if (uError) throw uError;
 
             const { data: shifts, error: sError } = await supabase
