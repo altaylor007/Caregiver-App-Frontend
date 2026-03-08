@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { FileText, ChevronLeft, Download, CheckCircle, Circle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { FileText, ChevronLeft, Download, CheckCircle, Circle, ArrowRight } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const CaregiverDocumentsPage = () => {
     const { user, profile } = useAuth();
+    const location = useLocation();
+    const isOnboarding = new URLSearchParams(location.search).get('onboarding') === 'true';
     const [documents, setDocuments] = useState([]);
     const [acknowledgedDocIds, setAcknowledgedDocIds] = useState(new Set());
     const [loading, setLoading] = useState(true);
@@ -92,11 +94,31 @@ const CaregiverDocumentsPage = () => {
     return (
         <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <button onClick={() => navigate(-1)} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
-                    <ChevronLeft size={24} />
-                </button>
+                {!isOnboarding && (
+                    <button onClick={() => navigate(-1)} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
+                        <ChevronLeft size={24} />
+                    </button>
+                )}
                 <h2 style={{ margin: 0 }}>Documents</h2>
             </div>
+
+            {isOnboarding && (
+                <div style={{
+                    backgroundColor: 'var(--primary-600)',
+                    color: 'white',
+                    padding: '1.5rem',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: '1.5rem',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                }}>
+                    <h3 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        Step 1: Review Required Protocols
+                    </h3>
+                    <p style={{ margin: 0, opacity: 0.9 }}>
+                        Welcome to Agnes Care Team! Before we get you scheduled, please ensure you read and acknowledge any required documents below.
+                    </p>
+                </div>
+            )}
 
             <div className="card" style={{ backgroundColor: 'var(--primary-50)', borderLeft: '4px solid var(--primary-500)', marginBottom: '1.5rem' }}>
                 <p className="text-sm">
@@ -209,6 +231,37 @@ const CaregiverDocumentsPage = () => {
                             </div>
                         );
                     })}
+                </div>
+            )}
+
+            {isOnboarding && !loading && (
+                <div style={{
+                    position: 'sticky',
+                    bottom: 0,
+                    backgroundColor: 'white',
+                    padding: '1rem',
+                    borderTop: '1px solid var(--neutral-200)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem',
+                    boxShadow: '0 -4px 10px rgba(0,0,0,0.05)',
+                    marginTop: '2rem',
+                    margin: '2rem -1rem -2rem -1rem' // Override parent padding to bleed to edges
+                }}>
+                    <button
+                        onClick={() => navigate('/availability?onboarding=true')}
+                        className="btn btn-primary"
+                        style={{ width: '100%', padding: '1rem', fontSize: '1.1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        Next Step: Set Availability <ArrowRight size={20} />
+                    </button>
+                    <button
+                        onClick={() => navigate('/')}
+                        className="btn btn-outline"
+                        style={{ border: 'none', color: 'var(--neutral-500)' }}
+                    >
+                        Skip Onboarding for now
+                    </button>
                 </div>
             )}
         </div>

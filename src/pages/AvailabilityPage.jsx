@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle, Info, MessageSquare, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle, Info, MessageSquare, X, ArrowRight } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const AvailabilityPage = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
+    const isOnboarding = new URLSearchParams(location.search).get('onboarding') === 'true';
     const [loading, setLoading] = useState(true);
     const [saveStatus, setSaveStatus] = useState(''); // inline saving indicator
 
@@ -16,6 +18,9 @@ const AvailabilityPage = () => {
 
     // Admin Requests
     const [activeRequests, setActiveRequests] = useState([]);
+
+    // Broadcast message
+    const [latestAvailabilityMessage, setLatestAvailabilityMessage] = useState(null);
 
     // The user's selections: { '2023-10-01': { status: 'available', notes: 'Call me' } }
     const [availabilityMap, setAvailabilityMap] = useState({});
@@ -42,6 +47,32 @@ const AvailabilityPage = () => {
 
             if (reqError) throw reqError;
             if (reqData) setActiveRequests(reqData);
+
+            // Fetch the latest "Submit your availability" broadcast message
+            const { data: topicData } = await supabase
+                .from('message_topics')
+                .select('id, title')
+                .eq('title', 'Submit your availability')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (topicData) {
+                const { data: latestMsg } = await supabase
+                    .from('messages')
+                    .select('content, created_at, users(full_name, avatar_url)')
+                    .eq('topic_id', topicData.id)
+                    .order('created_at', { ascending: true }) // first message in topic
+                    .limit(1)
+                    .single();
+
+                if (latestMsg) {
+                    setLatestAvailabilityMessage({
+                        ...latestMsg,
+                        topic_id: topicData.id
+                    });
+                }
+            }
 
             // 2. Fetch User's existing responses
             const { data: respData, error: respError } = await supabase
@@ -187,31 +218,103 @@ const AvailabilityPage = () => {
     // 0 is Sunday, map to Monday-start by shifting standard JS days (Optional, UI choice)
     const firstDayIndex = monthStart.getDay();
 
+    // Determine the absolute latest request to display
+    let latestRequestToDisplay = null;
+
+    if (activeRequests.length > 0 && latestAvailabilityMessage) {
+        const reqDate = new Date(activeRequests[0].created_at);
+        const msgDate = new Date(latestAvailabilityMessage.created_at);
+        if (reqDate > msgDate) {
+            latestRequestToDisplay = { type: 'admin_request', data: activeRequests[0] };
+        } else {
+            latestRequestToDisplay = { type: 'broadcast_message', data: latestAvailabilityMessage };
+        }
+    } else if (activeRequests.length > 0) {
+        latestRequestToDisplay = { type: 'admin_request', data: activeRequests[0] };
+    } else if (latestAvailabilityMessage) {
+        latestRequestToDisplay = { type: 'broadcast_message', data: latestAvailabilityMessage };
+    }
+
     return (
         <div style={{ paddingBottom: '2rem', maxWidth: '800px', margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                <button onClick={() => navigate(-1)} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
-                    <ChevronLeft size={24} />
-                </button>
+                {!isOnboarding && (
+                    <button onClick={() => navigate(-1)} className="btn btn-outline" style={{ padding: '0.25rem', border: 'none' }}>
+                        <ChevronLeft size={24} />
+                    </button>
+                )}
                 <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <CalendarIcon className="text-primary" /> My Availability
                 </h2>
             </div>
 
-            {/* Admin Requests Banner */}
-            {activeRequests.length > 0 && (
+            {isOnboarding && (
+                <div style={{
+                    backgroundColor: 'var(--primary-600)',
+                    color: 'white',
+                    padding: '1.5rem',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: '1.5rem',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                }}>
+                    <h3 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        Final Step: Schedule Your Availability
+                    </h3>
+                    <p style={{ margin: 0, opacity: 0.9 }}>
+                        We need to know when you can work! Please select days on the calendar to mark your shifts for the next few weeks.
+                    </p>
+                </div>
+            )}
+
+            {/* Latest Availability Request Banner */}
+            {latestRequestToDisplay?.type === 'broadcast_message' && (
+                <div style={{ marginBottom: '2rem' }}>
+                    <div className="card" style={{ padding: '1.25rem', backgroundColor: 'var(--primary-600)', color: 'white', borderRadius: 'var(--radius-lg)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div style={{
+                                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                                backgroundColor: 'white', color: 'var(--primary-700)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontWeight: 'bold', fontSize: '1rem', overflow: 'hidden'
+                            }}>
+                                {latestRequestToDisplay.data.users?.avatar_url ? (
+                                    <img src={latestRequestToDisplay.data.users.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    latestRequestToDisplay.data.users?.full_name?.charAt(0).toUpperCase() || 'M'
+                                )}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Message from {latestRequestToDisplay.data.users?.full_name || 'Manager'}</div>
+                                <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>{format(parseISO(latestRequestToDisplay.data.created_at), 'MMMM do')}</div>
+                            </div>
+                        </div>
+                        <div style={{ backgroundColor: 'rgba(255,255,255,0.1)', padding: '1rem', borderRadius: 'var(--radius-md)', fontSize: '0.95rem', lineHeight: 1.5 }}>
+                            {latestRequestToDisplay.data.content.replace('@all', '')} {/* Clean up @all tag for this view */}
+                        </div>
+                        <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
+                            <button
+                                onClick={() => navigate(`/messages?topic=${latestRequestToDisplay.data.topic_id}`)}
+                                className="btn"
+                                style={{ backgroundColor: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.4)', fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}
+                            >
+                                Reply in Team Messages
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {latestRequestToDisplay?.type === 'admin_request' && (
                 <div style={{ marginBottom: '2rem' }}>
                     <div style={{ padding: '1rem', backgroundColor: 'var(--primary-50)', borderLeft: '4px solid var(--primary-500)', borderRadius: 'var(--radius-md)' }}>
                         <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, color: 'var(--primary-800)' }}>
                             <Info size={18} /> Schedule Requests from Admin
                         </h4>
                         <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            {activeRequests.map(req => (
-                                <div key={req.id} style={{ backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', fontSize: '0.875rem' }}>
-                                    <strong>Period:</strong> {format(parseISO(req.start_date), 'MMM d')} to {format(parseISO(req.end_date), 'MMM d')}
-                                    {req.message && <p style={{ margin: '0.2rem 0 0 0', color: 'var(--neutral-600)' }}>"{req.message}"</p>}
-                                </div>
-                            ))}
+                            <div style={{ backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', fontSize: '0.875rem' }}>
+                                <strong>Period:</strong> {format(parseISO(latestRequestToDisplay.data.start_date), 'MMM d')} to {format(parseISO(latestRequestToDisplay.data.end_date), 'MMM d')}
+                                {latestRequestToDisplay.data.message && <p style={{ margin: '0.2rem 0 0 0', color: 'var(--neutral-600)' }}>"{latestRequestToDisplay.data.message}"</p>}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -399,6 +502,37 @@ const AvailabilityPage = () => {
                             <button onClick={handleSaveNote} className="btn btn-primary">Save Note</button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {isOnboarding && !loading && (
+                <div style={{
+                    position: 'sticky',
+                    bottom: 0,
+                    backgroundColor: 'white',
+                    padding: '1rem',
+                    borderTop: '1px solid var(--neutral-200)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem',
+                    boxShadow: '0 -4px 10px rgba(0,0,0,0.05)',
+                    marginTop: '2rem',
+                    margin: '2rem -1rem -2rem -1rem' // Override parent padding to bleed to edges
+                }}>
+                    <button
+                        onClick={() => navigate('/')}
+                        className="btn btn-primary"
+                        style={{ width: '100%', padding: '1rem', fontSize: '1.1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        Complete Onboarding <CheckCircle size={20} />
+                    </button>
+                    <button
+                        onClick={() => navigate('/')}
+                        className="btn btn-outline"
+                        style={{ border: 'none', color: 'var(--neutral-500)' }}
+                    >
+                        Skip Onboarding for now
+                    </button>
                 </div>
             )}
         </div>

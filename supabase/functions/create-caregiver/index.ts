@@ -40,14 +40,15 @@ serve(async (req) => {
       throw new Error('Invalid JWT: Unauthorized');
     }
 
-    const { email, fullName, password } = await req.json();
+    const { email, firstName, lastName, password } = await req.json();
+    const fullName = [firstName, lastName].filter(Boolean).join(' ');
 
     // 1. Create the user in the auth.users table
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: email,
       password: password || 'Agnes2026',
       email_confirm: true,
-      user_metadata: { full_name: fullName },
+      user_metadata: { full_name: fullName, first_name: firstName, last_name: lastName },
     });
 
     if (authError) {
@@ -66,6 +67,8 @@ serve(async (req) => {
         .from('users')
         .update({
           full_name: fullName,
+          first_name: firstName || null,
+          last_name: lastName || null,
           role: 'caregiver',
           requires_password_change: true,
         })

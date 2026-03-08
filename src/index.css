@@ -377,7 +377,7 @@ h3 {
 .calendar-row {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 0.5rem;
+  gap: 1rem 0.5rem;
 }
 
 .calendar-header-cell {
@@ -444,6 +444,17 @@ h3 {
   background-color: var(--primary-50);
 }
 
+.shift-other {
+  border-left-color: var(--neutral-300);
+  background-color: var(--neutral-100);
+  opacity: 0.85;
+}
+
+/* Print-only elements (hidden on screen, shown in print) */
+.print-only-header {
+  display: none;
+}
+
 /* Print Styles */
 @media print {
   @page {
@@ -463,7 +474,8 @@ h3 {
   .bottom-nav,
   button,
   select,
-  .btn {
+  .btn,
+  .no-print {
     display: none !important;
   }
 
@@ -473,6 +485,16 @@ h3 {
     margin: 0 !important;
     max-width: none !important;
     width: 100% !important;
+  }
+
+  /* Show branded print header */
+  .print-only-header {
+    display: flex !important;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #ccc;
   }
 
   main {

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format, parseISO } from 'date-fns';
-import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap } from 'lucide-react';
 
 // Quick-pick emojis shown in the hover picker
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👏', '🙏'];
@@ -326,6 +326,23 @@ const MessagesPage = () => {
                 {view === 'topics' && (
                     <>
                         <div style={{ padding: '1rem', borderBottom: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
+                            {isAdmin && (
+                                <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-500)', textTransform: 'uppercase' }}>Quick Actions:</span>
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setNewTopicTitle('Submit your availability');
+                                            setNewTopicMessage('Please submit your availability for next month by the 20th so we can prepare the schedule. @all');
+                                            inputRef.current?.focus();
+                                        }}
+                                        className="btn btn-outline"
+                                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', display: 'flex', gap: '0.25rem', alignItems: 'center', color: 'var(--primary-600)', borderColor: 'var(--primary-200)' }}
+                                    >
+                                        <Zap size={12} /> Request Availability from Team
+                                    </button>
+                                </div>
+                            )}
                             <form onSubmit={handleCreateTopic} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                 <input
                                     type="text" className="form-input"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Home, Calendar, Users, MessageSquare, Menu, X, FileText, Bell, FolderOpen, Shield, User, Contact, Moon, Sun } from 'lucide-react';
+import { LogOut, Home, Calendar, CalendarCheck, Users, MessageSquare, Menu, X, FileText, Bell, FolderOpen, Shield, User, Contact, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
@@ -114,6 +114,19 @@ const MainLayout = () => {
                 </div>
                 <div style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <button
+                        onClick={async () => {
+                            await signOut();
+                            navigate('/welcome');
+                        }}
+                        className="btn btn-outline"
+                        style={{ padding: '0.4rem', border: 'none', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        title="Sign Out"
+                    >
+                        <LogOut size={20} className="text-neutral-500" />
+                        <span className="text-sm text-neutral-600 hidden sm-inline">Sign Out</span>
+                    </button>
+
+                    <button
                         onClick={toggleTheme}
                         className="btn btn-outline"
                         style={{ padding: '0.4rem', border: 'none' }}
@@ -162,108 +175,119 @@ const MainLayout = () => {
                         </div>
                     )}
                 </div>
-            </header>
+            </header >
 
             {/* Main Content Area */}
-            <main style={{ flex: 1, paddingBottom: '1rem', marginTop: '1rem' }}>
+            < main style={{ flex: 1, paddingBottom: '1rem', marginTop: '1rem' }}>
                 <Outlet />
-            </main>
+            </main >
 
             {/* Bottom Mobile Navigation */}
-            <nav className="bottom-nav">
-                {isAdmin ? (
-                    <>
-                        <NavLink to="/admin" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <Home />
-                            <span>Home</span>
-                        </NavLink>
-                        <NavLink to="/admin/schedule" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <Calendar />
-                            <span>Schedule</span>
-                        </NavLink>
-                        <NavLink to="/admin/payroll" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <FileText />
-                            <span>Hours Reporting</span>
-                        </NavLink>
-                        <NavLink to="/admin/caregivers" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <Users />
-                            <span>Team</span>
-                        </NavLink>
-                        {isSuperAdmin && (
-                            <NavLink to="/admin/roles" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                                <Shield />
-                                <span>Roles</span>
+            < nav className="bottom-nav" >
+                {
+                    isAdmin ? (
+                        <>
+                            <NavLink to="/admin" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <Home />
+                                <span>Home</span>
                             </NavLink>
-                        )}
-                        <NavLink to="/admin/documents" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <FolderOpen />
-                            <span>Documents</span>
-                        </NavLink>
-                        <NavLink to="/messages" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                            <div style={{ position: 'relative' }}>
-                                <MessageSquare />
-                                {hasUnreadMessages && (
-                                    <span style={{
-                                        position: 'absolute', top: -2, right: -4, width: 8, height: 8,
-                                        backgroundColor: 'var(--danger-500)', borderRadius: '50%'
-                                    }}></span>
-                                )}
-                            </div>
-                            <span>Messages</span>
-                        </NavLink>
-                    </>
-                ) : (
-                    <>
-                        <NavLink
-                            to="/"
-                            end
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <Home />
-                            <span>Home</span>
-                        </NavLink>
+                            <NavLink to="/admin/schedule" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <Calendar />
+                                <span>Schedule</span>
+                            </NavLink>
+                            <NavLink to="/admin/payroll" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <FileText />
+                                <span>Hours Reporting</span>
+                            </NavLink>
+                            <NavLink to="/admin/caregivers" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <Users />
+                                <span>Team</span>
+                            </NavLink>
+                            {
+                                isSuperAdmin && (
+                                    <NavLink to="/admin/roles" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                        <Shield />
+                                        <span>Roles</span>
+                                    </NavLink>
+                                )
+                            }
+                            <NavLink to="/admin/documents" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <FolderOpen />
+                                <span>Documents</span>
+                            </NavLink>
+                            <NavLink to="/messages" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                                <div style={{ position: 'relative' }}>
+                                    <MessageSquare />
+                                    {hasUnreadMessages && (
+                                        <span style={{
+                                            position: 'absolute', top: -2, right: -4, width: 8, height: 8,
+                                            backgroundColor: 'var(--danger-500)', borderRadius: '50%'
+                                        }}></span>
+                                    )}
+                                </div>
+                                <span>Messages</span>
+                            </NavLink>
+                        </>
+                    ) : (
+                        <>
+                            <NavLink
+                                to="/"
+                                end
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <Home />
+                                <span>Home</span>
+                            </NavLink>
 
-                        <NavLink
-                            to="/schedule"
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <Calendar />
-                            <span>Schedule</span>
-                        </NavLink>
+                            <NavLink
+                                to="/schedule"
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <Calendar />
+                                <span>Schedule</span>
+                            </NavLink>
 
-                        <NavLink
-                            to="/messages"
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <div style={{ position: 'relative' }}>
-                                <MessageSquare />
-                                {hasUnreadMessages && (
-                                    <span style={{
-                                        position: 'absolute', top: -2, right: -4, width: 8, height: 8,
-                                        backgroundColor: 'var(--danger-500)', borderRadius: '50%'
-                                    }}></span>
-                                )}
-                            </div>
-                            <span>Messages</span>
-                        </NavLink>
+                            <NavLink
+                                to="/availability"
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <CalendarCheck />
+                                <span>Availability</span>
+                            </NavLink>
 
-                        <NavLink
-                            to="/documents"
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <FolderOpen />
-                            <span>Documents</span>
-                        </NavLink>
+                            <NavLink
+                                to="/messages"
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <div style={{ position: 'relative' }}>
+                                    <MessageSquare />
+                                    {hasUnreadMessages && (
+                                        <span style={{
+                                            position: 'absolute', top: -2, right: -4, width: 8, height: 8,
+                                            backgroundColor: 'var(--danger-500)', borderRadius: '50%'
+                                        }}></span>
+                                    )}
+                                </div>
+                                <span>Messages</span>
+                            </NavLink>
 
-                        <NavLink
-                            to="/directory"
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            <Contact />
-                            <span>Directory</span>
-                        </NavLink>
-                    </>
-                )}
+                            <NavLink
+                                to="/documents"
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <FolderOpen />
+                                <span>Documents</span>
+                            </NavLink>
+
+                            <NavLink
+                                to="/directory"
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <Contact />
+                                <span>Directory</span>
+                            </NavLink>
+                        </>
+                    )}
                 <NavLink
                     to="/profile"
                     className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -271,8 +295,8 @@ const MainLayout = () => {
                     <User />
                     <span>Profile</span>
                 </NavLink>
-            </nav>
-        </div>
+            </nav >
+        </div >
     );
 };
 

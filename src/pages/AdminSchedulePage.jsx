@@ -57,6 +57,58 @@ const AdminSchedulePage = () => {
     // Payroll lock state: array of { startStr, endStr } locked date ranges
     const [lockedRanges, setLockedRanges] = useState([]);
 
+    // Bulk Operations State
+    const [selectedShiftIds, setSelectedShiftIds] = useState([]);
+    const [isBulkAssignModalOpen, setIsBulkAssignModalOpen] = useState(false);
+    const [bulkAssignedTo, setBulkAssignedTo] = useState('');
+    const [bulkCustomName, setBulkCustomName] = useState('');
+    const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+    const toggleShiftSelection = (e, shiftId, locked) => {
+        e.stopPropagation();
+        if (locked) return;
+        setSelectedShiftIds(prev =>
+            prev.includes(shiftId) ? prev.filter(id => id !== shiftId) : [...prev, shiftId]
+        );
+    };
+
+    const handleBulkDelete = async () => {
+        if (!window.confirm(`Are you sure you want to delete ${selectedShiftIds.length} selected shift(s)?`)) return;
+        const { error } = await supabase.from('shifts').delete().in('id', selectedShiftIds);
+        if (!error) {
+            setSelectedShiftIds([]);
+            fetchData();
+        } else {
+            alert('Error deleting shifts: ' + error.message);
+        }
+    };
+
+    const handleBulkAssignSubmit = async (e) => {
+        e.preventDefault();
+        setBulkSubmitting(true);
+
+        const finalAssignedTo = bulkAssignedTo === 'custom' ? null : (bulkAssignedTo || null);
+        const finalCustomName = bulkAssignedTo === 'custom' && bulkCustomName.trim() !== '' ? bulkCustomName.trim() : null;
+        const isOpen = !finalAssignedTo && !finalCustomName;
+
+        const payload = {
+            assigned_to: finalAssignedTo,
+            custom_assigned_name: finalCustomName,
+            is_open: isOpen
+        };
+
+        const { error } = await supabase.from('shifts').update(payload).in('id', selectedShiftIds);
+
+        setBulkSubmitting(false);
+        if (!error) {
+            setIsBulkAssignModalOpen(false);
+            setSelectedShiftIds([]);
+            fetchData();
+        } else {
+            alert('Error assigning shifts: ' + error.message);
+        }
+    };
+
     const fetchData = async () => {
         setLoading(true);
 
@@ -73,7 +125,7 @@ const AdminSchedulePage = () => {
         // Fetch shifts for this range
         const shiftsData = await supabase
             .from('shifts')
-            .select('*, users(full_name)')
+            .select('*, users(full_name, first_name)')
             .gte('date', startDateStr)
             .lte('date', endDateStr)
             .order('start_time', { ascending: true });
@@ -81,7 +133,7 @@ const AdminSchedulePage = () => {
         // Fetch active caregivers for assignment dropdown
         const caregiversData = await supabase
             .from('users')
-            .select('id, full_name')
+            .select('id, full_name, first_name, last_name')
             .eq('role', 'caregiver')
             .eq('status', 'active');
 
@@ -195,9 +247,23 @@ const AdminSchedulePage = () => {
         }
 
         if (currentId) {
-            // Update single existing shift
             const startIso = new Date(`${date}T${startTime}:00`).toISOString();
             const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+
+            // Check for overlaps (excluding current shift)
+            const overlappingShift = shifts.find(s => {
+                if (s.id === currentId) return false;
+                if (s.date !== date) return false;
+                return (startIso < s.end_time && endIso > s.start_time);
+            });
+
+            if (overlappingShift) {
+                const confirmed = window.confirm(
+                    `⚠️ Shift Overlap Detected\n\nThere is already a shift scheduled on ${date} that overlaps with this time.\n\nDo you want to create/update this shift anyway and allow them to overlap?`
+                );
+                if (!confirmed) return;
+            }
+
             const payload = {
                 title,
                 date,
@@ -215,33 +281,59 @@ const AdminSchedulePage = () => {
             if (applyToWeek) {
                 // Generate Sun-Sat for the week of the selected date
                 const baseDate = parseISO(date);
-                // getDay(): 0=Sun, 1=Mon, ... 6=Sat
-                // Find the Sunday of this week
                 const dayOfWeek = baseDate.getDay();
                 const sunday = new Date(baseDate);
                 sunday.setDate(baseDate.getDate() - dayOfWeek);
 
                 const shiftsToCreate = [];
+                let hasOverlap = false;
+
                 for (let i = 0; i < 7; i++) {
                     const shiftDate = new Date(sunday);
                     shiftDate.setDate(sunday.getDate() + i);
                     const shiftDateStr = format(shiftDate, 'yyyy-MM-dd');
+                    const startIso = new Date(`${shiftDateStr}T${startTime}:00`).toISOString();
+                    const endIso = new Date(`${shiftDateStr}T${endTime}:00`).toISOString();
+
+                    // Check for overlap strictly
+                    const overlap = shifts.find(s => s.date === shiftDateStr && startIso < s.end_time && endIso > s.start_time);
+                    if (overlap) {
+                        hasOverlap = true;
+                        break;
+                    }
 
                     shiftsToCreate.push({
                         title,
                         date: shiftDateStr,
-                        start_time: new Date(`${shiftDateStr}T${startTime}:00`).toISOString(),
-                        end_time: new Date(`${shiftDateStr}T${endTime}:00`).toISOString(),
+                        start_time: startIso,
+                        end_time: endIso,
                         assigned_to: finalAssignedTo,
                         custom_assigned_name: finalCustomName,
                         is_open: isOpen
                     });
                 }
+
+                if (hasOverlap) {
+                    setFormError("Cannot create a full week of shifts because one or more days already have overlapping shifts. Please create them individually.");
+                    return;
+                }
+
                 const res = await supabase.from('shifts').insert(shiftsToCreate);
                 error = res.error;
             } else {
                 const startIso = new Date(`${date}T${startTime}:00`).toISOString();
                 const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+
+                // Check for overlaps for new single shift
+                const overlappingShift = shifts.find(s => s.date === date && startIso < s.end_time && endIso > s.start_time);
+
+                if (overlappingShift) {
+                    const confirmed = window.confirm(
+                        `⚠️ Shift Overlap Detected\n\nThere is already a shift scheduled on ${date} that overlaps with this time.\n\nDo you want to create this shift anyway and allow them to overlap?`
+                    );
+                    if (!confirmed) return;
+                }
+
                 const payload = {
                     title,
                     date,
@@ -858,6 +950,25 @@ const AdminSchedulePage = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--warning-500)' }}></span> Open Shift</div>
                         </div>
 
+                        {selectedShiftIds.length > 0 && (
+                            <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', backgroundColor: 'var(--primary-600)', color: 'white', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' }}>
+                                <div style={{ fontWeight: 600 }}>
+                                    {selectedShiftIds.length} shift(s) selected
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button onClick={() => setIsBulkAssignModalOpen(true)} className="btn" style={{ backgroundColor: 'white', color: 'var(--primary-700)', border: 'none', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>
+                                        Assign / Reassign
+                                    </button>
+                                    <button onClick={handleBulkDelete} className="btn" style={{ backgroundColor: 'var(--danger-500)', color: 'white', border: '1px solid var(--danger-400)', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>
+                                        Delete Selected
+                                    </button>
+                                    <button onClick={() => setSelectedShiftIds([])} className="btn" style={{ backgroundColor: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.4)', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="calendar-container">
                             <div className="calendar-wrapper">
                                 <div className="calendar-row">
@@ -886,10 +997,11 @@ const AdminSchedulePage = () => {
                                             return (
                                                 <div
                                                     key={dayStr}
-                                                    className={`calendar - day - cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''} `}
-                                                    style={{ gridColumn: 'auto', cursor: dayShifts.length === 0 ? 'pointer' : 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : (filterCaregiverId ? '#fafcff' : 'transparent'), opacity: !isCurrentMonthDay ? 0.7 : 1 }}
-                                                    onClick={() => {
-                                                        if (dayShifts.length === 0) {
+                                                    className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''} `}
+                                                    style={{ gridColumn: 'auto', cursor: 'pointer', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : (filterCaregiverId ? '#fafcff' : 'transparent'), opacity: !isCurrentMonthDay ? 0.7 : 1 }}
+                                                    onClick={(e) => {
+                                                        // Only trigger if clicking the cell itself or the date label, not clicking inside a shift card
+                                                        if (e.target === e.currentTarget || e.target.closest('.calendar-date-label')) {
                                                             openNewForm();
                                                             setDate(dayStr);
                                                             if (filterCaregiverId) setAssignedTo(filterCaregiverId);
@@ -909,8 +1021,19 @@ const AdminSchedulePage = () => {
                                                             return (
                                                                 <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', opacity: locked ? 0.65 : 1, cursor: locked ? 'not-allowed' : 'pointer' }}>
                                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.2rem' }}>
-                                                                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', lineHeight: 1.2, wordBreak: 'break-word' }}>
-                                                                            {isAssigned ? (shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : '🚨 Open Shift'}
+                                                                        <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                                                            {!locked && (
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={selectedShiftIds.includes(shift.id)}
+                                                                                    onChange={(e) => toggleShiftSelection(e, shift.id, locked)}
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    style={{ marginTop: '0.15rem', cursor: 'pointer', accentColor: 'var(--primary-600)', flexShrink: 0 }}
+                                                                                />
+                                                                            )}
+                                                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: isAssigned ? 'var(--success-700)' : 'var(--warning-700)', lineHeight: 1.2, wordBreak: 'break-word' }}>
+                                                                                {isAssigned ? (shift.users?.first_name || shift.users?.full_name || shift.custom_assigned_name || 'Caregiver') : '🚨 Open Shift'}
+                                                                            </div>
                                                                         </div>
                                                                         {locked ? (
                                                                             <Lock size={11} style={{ color: 'var(--neutral-400)', flexShrink: 0, marginTop: '0.1rem' }} title="Locked: payroll confirmed" />
@@ -958,6 +1081,53 @@ const AdminSchedulePage = () => {
                         </div>
                     </>
                 )}
+
+            {/* Bulk Assign Modal */}
+            {isBulkAssignModalOpen && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', overflowY: 'auto' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '500px', margin: 'auto' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3 style={{ margin: 0 }}>Bulk Assign {selectedShiftIds.length} Shift(s)</h3>
+                            <button type="button" onClick={() => setIsBulkAssignModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', lineHeight: 1, color: 'var(--neutral-500)' }}>&times;</button>
+                        </div>
+                        <form onSubmit={handleBulkAssignSubmit}>
+                            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                <label className="form-label">Assign To</label>
+                                <select className="form-input" value={bulkAssignedTo} onChange={e => setBulkAssignedTo(e.target.value)}>
+                                    <option value="">-- Open Shift (Unassigned) --</option>
+                                    <option value="custom">-- 📍 Other (Manual Entry) --</option>
+                                    {caregivers.map(cg => (
+                                        <option key={cg.id} value={cg.id}>
+                                            {cg.full_name || 'Unnamed Caregiver'}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            {bulkAssignedTo === 'custom' && (
+                                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                    <label className="form-label">Caregiver Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Enter name (e.g. John Smith)"
+                                        value={bulkCustomName}
+                                        onChange={e => setBulkCustomName(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={bulkSubmitting}>
+                                    {bulkSubmitting ? 'Updating...' : 'Apply Assignment'}
+                                </button>
+                                <button type="button" onClick={() => setIsBulkAssignModalOpen(false)} className="btn btn-outline" style={{ flex: 1 }}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

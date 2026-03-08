@@ -50,9 +50,6 @@ const AdminDashboardPage = () => {
             <div className="card">
                 <h3>Pending Items</h3>
                 <p className="text-neutral-muted text-sm" style={{ marginTop: '0.5rem' }}>
-                    0 Time-off Requests
-                </p>
-                <p className="text-neutral-muted text-sm">
                     0 Shift Trade Requests
                 </p>
             </div>

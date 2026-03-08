@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 
 const ProfilePage = () => {
     const { user, profile, signOut } = useAuth();
+    const [firstName, setFirstName] = useState(profile?.first_name || '');
+    const [lastName, setLastName] = useState(profile?.last_name || '');
     const [phone, setPhone] = useState(profile?.phone_number || profile?.phone || '');
     const [smsEnabled, setSmsEnabled] = useState(profile?.sms_enabled || false);
     const [isSaving, setIsSaving] = useState(false);
@@ -12,6 +14,8 @@ const ProfilePage = () => {
     const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
 
     useEffect(() => {
+        if (profile?.first_name) setFirstName(profile.first_name);
+        if (profile?.last_name) setLastName(profile.last_name);
         if (profile?.phone_number || profile?.phone) setPhone(profile.phone_number || profile.phone);
         if (profile?.sms_enabled !== undefined) setSmsEnabled(profile.sms_enabled);
         if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
@@ -19,11 +23,14 @@ const ProfilePage = () => {
 
     const handleUpdateSettings = async () => {
         setIsSaving(true);
-        // Map the traditional 'phone' to the new 'phone_number' column we added for the SMS integration
+        const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
         const { error } = await supabase.from('users').update({
+            first_name: firstName.trim() || null,
+            last_name: lastName.trim() || null,
+            full_name: fullName || null,
             phone_number: phone,
             sms_enabled: smsEnabled,
-            phone: phone // Keep updating the old column just in case other parts of the app rely on it
+            phone: phone
         }).eq('id', user.id);
 
         setIsSaving(false);
@@ -77,7 +84,7 @@ const ProfilePage = () => {
                         />
                     ) : (
                         <div style={{ width: '100%', height: '100%', borderRadius: '50%', backgroundColor: 'var(--primary-100)', color: 'var(--primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '2rem' }}>
-                            {user?.email?.charAt(0).toUpperCase() || 'C'}
+                            {(firstName || profile?.first_name || user?.email)?.charAt(0).toUpperCase() || 'C'}
                         </div>
                     )}
                     <label style={{
@@ -104,6 +111,35 @@ const ProfilePage = () => {
                         <span>→</span>
                     </button>
                 </Link>
+            </div>
+
+            <div className="card">
+                <h3 style={{ marginBottom: '1rem' }}>Your Name</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.5rem' }}>
+                    <div className="form-group">
+                        <label className="form-label">First Name</label>
+                        <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g. Jane"
+                            value={firstName}
+                            onChange={e => setFirstName(e.target.value)}
+                            style={{ marginTop: '0.5rem' }}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Last Name</label>
+                        <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g. Doe"
+                            value={lastName}
+                            onChange={e => setLastName(e.target.value)}
+                            style={{ marginTop: '0.5rem' }}
+                        />
+                    </div>
+                </div>
+                <p className="text-xs text-neutral-muted">Your name appears on the schedule and to other team members.</p>
             </div>
 
             <div className="card">

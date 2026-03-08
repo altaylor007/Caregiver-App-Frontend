@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy, KeyRound } from 'lucide-react';
+import { UserPlus, UserX, UserCheck, Mail, MessageSquare, Copy, KeyRound, Printer, Phone } from 'lucide-react';
 
 const AdminCaregiversPage = () => {
     const [caregivers, setCaregivers] = useState([]);
@@ -8,7 +8,8 @@ const AdminCaregiversPage = () => {
 
     // State for new caregiver form
     const [newEmail, setNewEmail] = useState('');
-    const [newName, setNewName] = useState('');
+    const [newFirstName, setNewFirstName] = useState('');
+    const [newLastName, setNewLastName] = useState('');
     const [newPhone, setNewPhone] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,7 +24,7 @@ const AdminCaregiversPage = () => {
         setLoading(true);
         const { data, error } = await supabase
             .from('users')
-            .select('id, full_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled, avatar_url')
+            .select('id, full_name, first_name, last_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled, avatar_url')
             .eq('role', 'caregiver')
             .order('created_at', { ascending: false });
 
@@ -67,8 +68,12 @@ const AdminCaregiversPage = () => {
             return;
         }
 
-        if (!newName) {
-            setErrorMsg("Please provide a full name.");
+        if (!newFirstName.trim()) {
+            setErrorMsg("Please provide a first name.");
+            return;
+        }
+        if (!newLastName.trim()) {
+            setErrorMsg("Please provide a last name.");
             return;
         }
 
@@ -81,7 +86,7 @@ const AdminCaregiversPage = () => {
         try {
             // Invoke the edge function using the standard authenticated client
             const { data, error: invokeError } = await supabase.functions.invoke('create-caregiver', {
-                body: { email: targetEmail, fullName: newName, password: passwordToUse }
+                body: { email: targetEmail, firstName: newFirstName.trim(), lastName: newLastName.trim(), password: passwordToUse }
             });
 
             if (invokeError) throw invokeError;
@@ -97,7 +102,8 @@ const AdminCaregiversPage = () => {
             });
 
             setNewEmail('');
-            setNewName('');
+            setNewFirstName('');
+            setNewLastName('');
             setNewPhone('');
             setNewPassword('');
             fetchCaregivers();
@@ -147,7 +153,8 @@ const AdminCaregiversPage = () => {
 
     const handleResetPassword = async (cg) => {
         const DEFAULT_PASSWORD = 'Agnes2026';
-        if (!window.confirm(`Reset ${cg.full_name || cg.email}'s password to the default (${DEFAULT_PASSWORD})?`)) return;
+        const displayName = cg.first_name && cg.last_name ? `${cg.first_name} ${cg.last_name}` : (cg.full_name || cg.email);
+        if (!window.confirm(`Reset ${displayName}'s password to the default (${DEFAULT_PASSWORD})?`)) return;
 
         const { data, error } = await supabase.functions.invoke('reset-password', {
             body: { userId: cg.id, password: DEFAULT_PASSWORD }
@@ -156,7 +163,8 @@ const AdminCaregiversPage = () => {
         if (error || data?.error) {
             alert('Error resetting password: ' + (error?.message || data?.error));
         } else {
-            setSuccessMsg(`Password for ${cg.full_name || cg.email} reset to ${DEFAULT_PASSWORD} successfully.`);
+            const displayName = cg.first_name && cg.last_name ? `${cg.first_name} ${cg.last_name}` : (cg.full_name || cg.email);
+            setSuccessMsg(`Password for ${displayName} reset to ${DEFAULT_PASSWORD} successfully.`);
             setTimeout(() => setSuccessMsg(''), 5000);
         }
     };
@@ -225,6 +233,68 @@ const AdminCaregiversPage = () => {
         }
     };
 
+    const handlePrintRoster = () => {
+        // Sort caregivers alphabetically by last name, then first name
+        const sorted = [...caregivers].sort((a, b) => {
+            const lastA = (a.last_name || a.full_name || '').toLowerCase();
+            const lastB = (b.last_name || b.full_name || '').toLowerCase();
+            if (lastA !== lastB) return lastA.localeCompare(lastB);
+            const firstA = (a.first_name || '').toLowerCase();
+            const firstB = (b.first_name || '').toLowerCase();
+            return firstA.localeCompare(firstB);
+        });
+
+        const rows = sorted.map(cg => {
+            const name = cg.first_name && cg.last_name
+                ? `${cg.last_name}, ${cg.first_name}`
+                : (cg.full_name || 'Unnamed');
+            const phone = cg.phone || '—';
+            return `<tr><td>${name}</td><td>${phone}</td></tr>`;
+        }).join('');
+
+        const printDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>ACT Phone Roster</title>
+  <style>
+    @page { size: letter portrait; margin: 0.75in; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 13pt; color: #000; }
+    h1 { font-size: 18pt; margin: 0 0 4px 0; }
+    .subtitle { font-size: 11pt; color: #555; margin: 0 0 20px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 12pt; border-bottom: 2px solid #000; padding: 6px 8px; }
+    td { padding: 6px 8px; font-size: 13pt; border-bottom: 1px solid #ccc; }
+    tr:last-child td { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <h1>ACT Phone Roster</h1>
+  <p class="subtitle">Agnes Care Team &mdash; Printed ${printDate}</p>
+  <table>
+    <thead><tr><th>Name</th><th>Phone Number</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        iframe.contentDocument.open();
+        iframe.contentDocument.write(html);
+        iframe.contentDocument.close();
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => document.body.removeChild(iframe), 1000);
+    };
+
     return (
         <div style={{ paddingBottom: '2rem' }}>
             <h2 style={{ marginBottom: '1rem' }}>Manage Caregivers</h2>
@@ -252,16 +322,29 @@ const AdminCaregiversPage = () => {
                 </p>
 
                 <form onSubmit={handleCreateUser} style={{ marginBottom: '1.5rem' }}>
-                    <div className="form-group" style={{ marginBottom: '1rem' }}>
-                        <label className="form-label">Full Name <span style={{ color: 'red' }}>*</span></label>
-                        <input
-                            type="text"
-                            required
-                            className="form-input"
-                            placeholder="e.g. Jane Doe"
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value)}
-                        />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                        <div className="form-group">
+                            <label className="form-label">First Name <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="text"
+                                required
+                                className="form-input"
+                                placeholder="e.g. Jane"
+                                value={newFirstName}
+                                onChange={(e) => setNewFirstName(e.target.value)}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Last Name <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="text"
+                                required
+                                className="form-input"
+                                placeholder="e.g. Doe"
+                                value={newLastName}
+                                onChange={(e) => setNewLastName(e.target.value)}
+                            />
+                        </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                         <div className="form-group">
@@ -345,7 +428,19 @@ const AdminCaregiversPage = () => {
                 )}
             </div>
 
-            <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Team Roster ({caregivers.length})</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2rem', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0 }}>Team Roster ({caregivers.length})</h3>
+                {caregivers.length > 0 && (
+                    <button
+                        onClick={handlePrintRoster}
+                        className="btn btn-secondary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', padding: '0.4rem 0.9rem' }}
+                        title="Print a phone roster"
+                    >
+                        <Printer size={16} /> Print Phone Roster
+                    </button>
+                )}
+            </div>
 
             {loading ? (
                 <p>Loading...</p>
@@ -361,19 +456,23 @@ const AdminCaregiversPage = () => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <div style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: 'var(--neutral-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                                         {cg.avatar_url ? (
-                                            <img src={cg.avatar_url} alt={cg.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            <img src={cg.avatar_url} alt={cg.first_name || cg.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                         ) : (
                                             <span style={{ fontWeight: 'bold', color: 'var(--neutral-500)', fontSize: '0.875rem' }}>
-                                                {cg.full_name?.charAt(0).toUpperCase() || '?'}
+                                                {(cg.first_name || cg.full_name)?.charAt(0).toUpperCase() || '?'}
                                             </span>
                                         )}
                                     </div>
-                                    <p style={{ fontWeight: 600 }}>{cg.full_name || 'Unnamed Caregiver'}</p>
+                                    <p style={{ fontWeight: 600 }}>{cg.first_name && cg.last_name ? `${cg.first_name} ${cg.last_name}` : (cg.full_name || 'Unnamed Caregiver')}</p>
                                     {cg.status === 'inactive' && (
                                         <span style={{ fontSize: '0.7rem', backgroundColor: 'var(--neutral-200)', color: 'var(--neutral-700)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Inactive</span>
                                     )}
                                 </div>
                                 <p className="text-sm text-neutral-muted">{cg.email}</p>
+                                <p className="text-sm" style={{ margin: '2px 0 0', display: 'flex', alignItems: 'center', gap: '0.3rem', color: cg.phone ? 'var(--neutral-600)' : 'var(--neutral-400)' }}>
+                                    <Phone size={12} />
+                                    {cg.phone || <span style={{ fontStyle: 'italic' }}>No phone on file</span>}
+                                </p>
                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
                                         <div style={{ flex: 1 }}>

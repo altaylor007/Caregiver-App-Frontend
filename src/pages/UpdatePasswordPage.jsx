@@ -34,14 +34,9 @@ const UpdatePasswordPage = () => {
         setErrorMsg('');
 
         try {
-            // 1. Update their authentication password
-            const { error: authError } = await supabase.auth.updateUser({ password });
-            if (authError) throw authError;
-
-            // 2. Format the phone number (assuming US if no country code provided)
+            // Format the phone number FIRST (assuming US if no country code provided)
             let formattedPhone = phone.trim();
             if (!formattedPhone.startsWith('+')) {
-                // Remove all non-numeric characters for checking
                 const numericOnly = formattedPhone.replace(/\D/g, '');
                 if (numericOnly.length === 10) {
                     formattedPhone = `+1${numericOnly}`;
@@ -50,26 +45,33 @@ const UpdatePasswordPage = () => {
                 }
             }
 
-            // 3. Save the phone number to the users profile table and opt them into SMS by default
+            // 1. Update the profile FIRST so that when auth triggers a re-render,
+            //    requires_password_change is already false (prevents redirect loop).
             if (user?.id) {
                 const { error: dbError } = await supabase
                     .from('users')
                     .update({
                         phone_number: formattedPhone,
-                        phone: formattedPhone, // Keep legacy column updated
+                        phone: formattedPhone,
                         sms_enabled: true,
                         requires_password_change: false
                     })
                     .eq('id', user.id);
 
                 if (dbError) {
-                    console.error("Failed to save phone number to database:", dbError);
-                    // We don't throw here because their password did update successfully
+                    console.error("Failed to save profile to database:", dbError);
+                    // Don't block - still try to update password
                 }
             }
 
+            // 2. NOW update the auth password — this triggers an auth state change
+            //    which re-fetches the profile. By this point requires_password_change
+            //    is already false, so the ProtectedRoute guard won't redirect back here.
+            const { error: authError } = await supabase.auth.updateUser({ password });
+            if (authError) throw authError;
+
             alert('Account setup complete! Welcome to the team.');
-            navigate('/');
+            navigate('/documents?onboarding=true');
         } catch (error) {
             setErrorMsg(error.message);
         } finally {

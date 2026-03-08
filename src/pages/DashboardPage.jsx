@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format, parseISO, isAfter, startOfDay } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
+import { CalendarCheck, ChevronRight } from 'lucide-react';
 
 const DashboardPage = () => {
     const { profile, user } = useAuth();
+    const navigate = useNavigate();
     const [nextShift, setNextShift] = useState(null);
     const [openShiftsCount, setOpenShiftsCount] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -58,6 +61,31 @@ const DashboardPage = () => {
                 <p className="text-neutral-muted" style={{ marginTop: '0.5rem' }}>
                     Here is an overview of your schedule.
                 </p>
+            </div>
+
+            <div
+                className="card hover-card"
+                onClick={() => navigate('/availability')}
+                style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: 'var(--primary-50)',
+                    border: '1px solid var(--primary-200)',
+                    marginBottom: '1rem'
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ backgroundColor: 'var(--primary-100)', color: 'var(--primary-700)', padding: '0.75rem', borderRadius: '50%' }}>
+                        <CalendarCheck size={24} />
+                    </div>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-800)' }}>Set My Availability</h3>
+                        <p className="text-sm text-neutral-600" style={{ margin: 0, marginTop: '0.2rem' }}>Update when you can work</p>
+                    </div>
+                </div>
+                <ChevronRight className="text-primary-400" />
             </div>
 
             <div className="card">
