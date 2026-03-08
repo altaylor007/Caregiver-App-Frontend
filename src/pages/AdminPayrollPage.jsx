@@ -171,6 +171,7 @@ const PayrollReportView = () => {
     const [weekEnd, setWeekEnd] = useState(new Date());
     const [previewData, setPreviewData] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [showReportText, setShowReportText] = useState(null);
 
     const fetchHistory = async () => {
         setLoading(true);
@@ -259,21 +260,7 @@ const PayrollReportView = () => {
             return;
         }
 
-        // Look up designated payroll SMS contacts
-        const { data: contacts, error: contactErr } = await supabase
-            .from('users')
-            .select('id, full_name, phone')
-            .eq('payroll_report_contact', true);
-
-        if (contactErr) { alert('Error fetching payroll contacts: ' + contactErr.message); return; }
-
-        const validContacts = (contacts || []).filter(c => c.phone);
-        if (validContacts.length === 0) {
-            alert('No payroll report contacts with a phone number are configured.\n\nGo to Role Management → Payroll Report Recipients to designate a contact.');
-            return;
-        }
-
-        if (!window.confirm(`Are you sure you want to finalize this payroll and send via SMS to ${validContacts.map(c => c.full_name).join(', ')}? This will lock the hours.`)) return;
+        if (!window.confirm(`Are you sure you want to finalize this payroll? This will lock the hours and generate a text report for you to copy.`)) return;
         setLoading(true);
         try {
             const { error } = await supabase.from('payroll_reports').insert([{
@@ -289,26 +276,26 @@ const PayrollReportView = () => {
             const weDate = format(parseISO(previewData.end_date), 'MM-dd');
             const smsBody = `WE ${weDate}\n\n${smsLines}`;
 
-            // Send to each designated contact
-            const sendErrors = [];
-            for (const contact of validContacts) {
-                const { error: smsError } = await supabase.functions.invoke('send-sms', {
-                    body: { to: contact.phone, messageBody: smsBody }
-                });
-                if (smsError) sendErrors.push(`${contact.full_name}: ${smsError.message}`);
-            }
+            // Show the generated text to the user instead of sending a message
+            setShowReportText(smsBody);
 
             setPreviewData(null);
             fetchHistory();
-            if (sendErrors.length > 0) {
-                alert(`Report saved, but some SMS failed:\n${sendErrors.join('\n')}`);
-            } else {
-                alert(`Payroll report saved and SMS sent to ${validContacts.length} contact(s)!`);
-            }
         } catch (err) {
             alert('Error saving report: ' + err.message);
         }
         setLoading(false);
+    };
+
+    const handleCopyToClipboard = async () => {
+        if (!showReportText) return;
+        try {
+            await navigator.clipboard.writeText(showReportText);
+            alert('Report copied to clipboard! You can now paste it into your SMS or email app.');
+            setShowReportText(null);
+        } catch (err) {
+            alert('Failed to copy to clipboard. You can select the text and copy it manually.');
+        }
     };
 
     return (
@@ -377,7 +364,7 @@ const PayrollReportView = () => {
                                     <button onClick={confirmAndSend} className="btn btn-primary"
                                         style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--success-600)' }}
                                         disabled={loading}>
-                                        <CheckCircle size={16} /> Confirm & Send SMS
+                                        <CheckCircle size={16} /> Confirm & Generate Text
                                     </button>
                                 </div>
                             </>
@@ -385,6 +372,48 @@ const PayrollReportView = () => {
                     </div>
                 )}
             </div>
+
+            {/* View/Copy Report Dialog */}
+            {showReportText && (
+                <div style={{
+                    marginBottom: '2rem',
+                    padding: '1.5rem',
+                    backgroundColor: 'var(--primary-50)',
+                    border: '1px solid var(--primary-200)',
+                    borderRadius: 'var(--radius-lg)'
+                }}>
+                    <h4 style={{ color: 'var(--primary-800)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Mail size={18} /> Report Generated Successfully
+                    </h4>
+                    <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
+                        The payroll report has been finalized and locked. Copy the text below to paste into your preferred messaging app or email.
+                    </p>
+                    <textarea
+                        readOnly
+                        value={showReportText}
+                        style={{
+                            width: '100%',
+                            minHeight: '200px',
+                            padding: '1rem',
+                            borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--neutral-300)',
+                            fontFamily: 'monospace',
+                            fontSize: '0.875rem',
+                            resize: 'vertical',
+                            marginBottom: '1rem',
+                            backgroundColor: 'white'
+                        }}
+                    />
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <button onClick={handleCopyToClipboard} className="btn btn-primary" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            Copy to Clipboard
+                        </button>
+                        <button onClick={() => setShowReportText(null)} className="btn btn-outline" style={{ color: 'var(--neutral-500)' }}>
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* History */}
             <div>

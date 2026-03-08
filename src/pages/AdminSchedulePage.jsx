@@ -53,6 +53,7 @@ const AdminSchedulePage = () => {
     const [cellDialog, setCellDialog] = useState(null); // { caregiver, dayStr, availStatus, shifts }
     const [cellAssignShiftId, setCellAssignShiftId] = useState('');
     const [cellAssigning, setCellAssigning] = useState(false);
+    const [hoveredShiftId, setHoveredShiftId] = useState(null);
 
     // Payroll lock state: array of { startStr, endStr } locked date ranges
     const [lockedRanges, setLockedRanges] = useState([]);
@@ -612,7 +613,7 @@ const AdminSchedulePage = () => {
                                                 let dot = '';
                                                 if (availRecord?.status === 'available') dot = '🟢';
                                                 else if (availRecord?.status === 'available_morning') dot = '🟡 AM';
-                                                else if (availRecord?.status === 'available_evening') dot = '🟡 PM';
+                                                else if (availRecord?.status === 'available_evening') dot = '🟡 PM 🌃';
                                                 else if (availRecord?.status === 'unavailable') dot = '🔴';
 
                                                 return (
@@ -868,7 +869,7 @@ const AdminSchedulePage = () => {
                                         <strong>{cellDialog.caregiver.full_name}</strong> is&nbsp;
                                         {cellDialog.availStatus === 'available' ? '✅ available all day' :
                                             cellDialog.availStatus === 'available_morning' ? '🌅 available in the morning' :
-                                                cellDialog.availStatus === 'available_evening' ? '🌆 available in the evening' : '❓ status unknown'}
+                                                cellDialog.availStatus === 'available_evening' ? '🌃 available in the evening' : '❓ status unknown'}
                                     </div>
 
                                     <h4 style={{ marginBottom: '0.5rem', color: 'var(--neutral-700)' }}>Shifts on this day</h4>
@@ -1018,8 +1019,25 @@ const AdminSchedulePage = () => {
                                                             const locked = isDateLocked(shift.date);
                                                             const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
 
+                                                            const shiftHour = new Date(shift.start_time).getHours();
+                                                            const validCaregivers = caregivers.filter(cg => {
+                                                                const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
+                                                                if (!avail || avail.status === 'unavailable') return false;
+                                                                if (avail.status === 'available') return true;
+                                                                if (avail.status === 'available_morning' && shiftHour < 12) return true;
+                                                                if (avail.status === 'available_evening' && shiftHour >= 12) return true;
+                                                                return false;
+                                                            });
+
                                                             return (
-                                                                <div key={shift.id} className={`shift-card-mini ${cardClass}`} onClick={() => openEditForm(shift)} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', opacity: locked ? 0.65 : 1, cursor: locked ? 'not-allowed' : 'pointer' }}>
+                                                                <div
+                                                                    key={shift.id}
+                                                                    className={`shift-card-mini ${cardClass}`}
+                                                                    onClick={() => openEditForm(shift)}
+                                                                    onMouseEnter={() => !isAssigned && setHoveredShiftId(shift.id)}
+                                                                    onMouseLeave={() => setHoveredShiftId(null)}
+                                                                    style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', opacity: locked ? 0.65 : 1, cursor: locked ? 'not-allowed' : 'pointer', position: 'relative' }}
+                                                                >
                                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.2rem' }}>
                                                                         <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'flex-start' }}>
                                                                             {!locked && (
@@ -1059,9 +1077,93 @@ const AdminSchedulePage = () => {
                                                                         </div>
                                                                     )}
                                                                     {!isAssigned && (
-                                                                        <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
-                                                                            {availabilityResponses.filter(r => r.date === dayStr).length} available
-                                                                        </div>
+                                                                        <>
+                                                                            <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
+                                                                                {validCaregivers.length === 1 ? '1 caregiver available' : `${validCaregivers.length} caregivers available`}
+                                                                            </div>
+                                                                            {hoveredShiftId === shift.id && (
+                                                                                <div
+                                                                                    style={{
+                                                                                        position: 'absolute',
+                                                                                        bottom: '100%',
+                                                                                        left: '50%',
+                                                                                        transform: 'translateX(-50%)',
+                                                                                        zIndex: 50,
+                                                                                        paddingBottom: '0.4rem', /* the invisible bridge */
+                                                                                        width: '220px'
+                                                                                    }}
+                                                                                    onClick={e => e.stopPropagation()}
+                                                                                >
+                                                                                    <div
+                                                                                        className="card"
+                                                                                        style={{
+                                                                                            width: '100%',
+                                                                                            padding: '0.5rem',
+                                                                                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
+                                                                                            cursor: 'default',
+                                                                                            border: '1px solid var(--primary-200)',
+                                                                                            backgroundColor: 'var(--bg-app)',
+                                                                                            margin: 0
+                                                                                        }}
+                                                                                    >
+                                                                                        <div style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.5rem', borderBottom: '1px solid var(--neutral-200)', paddingBottom: '0.25rem', color: 'var(--primary-700)' }}>
+                                                                                            Quick Assign
+                                                                                        </div>
+                                                                                        {validCaregivers.length === 0 ? (
+                                                                                            <div style={{ color: 'var(--neutral-500)', fontSize: '0.7rem', padding: '0.25rem' }}>No one available for this shift time.</div>
+                                                                                        ) : (
+                                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', maxHeight: '160px', overflowY: 'auto' }}>
+                                                                                                {validCaregivers.map(cg => {
+                                                                                                    const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
+                                                                                                    let indicator = '🟢';
+                                                                                                    if (avail.status === 'available_morning') indicator = '🌅';
+                                                                                                    if (avail.status === 'available_evening') indicator = '🌃';
+                                                                                                    return (
+                                                                                                        <button
+                                                                                                            key={cg.id}
+                                                                                                            onClick={async (e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                const { error } = await supabase.from('shifts').update({ assigned_to: cg.id }).eq('id', shift.id);
+                                                                                                                if (!error) {
+                                                                                                                    // Update local state instead of full data refetch to prevent UI flicker
+                                                                                                                    setShifts(prevShifts => prevShifts.map(s => {
+                                                                                                                        if (s.id === shift.id) {
+                                                                                                                            return { ...s, assigned_to: cg.id, users: { full_name: cg.full_name, first_name: cg.first_name } };
+                                                                                                                        }
+                                                                                                                        return s;
+                                                                                                                    }));
+                                                                                                                    setHoveredShiftId(null);
+                                                                                                                }
+                                                                                                            }}
+                                                                                                            title={`Assign to ${cg.full_name}`}
+                                                                                                            style={{
+                                                                                                                padding: '0.4rem',
+                                                                                                                fontSize: '0.75rem',
+                                                                                                                display: 'flex',
+                                                                                                                justifyContent: 'flex-start',
+                                                                                                                alignItems: 'center',
+                                                                                                                gap: '0.4rem',
+                                                                                                                border: 'none',
+                                                                                                                textAlign: 'left',
+                                                                                                                background: 'transparent',
+                                                                                                                borderRadius: 'var(--radius-sm)',
+                                                                                                                cursor: 'pointer',
+                                                                                                                width: '100%',
+                                                                                                                color: 'var(--neutral-800)'
+                                                                                                            }}
+                                                                                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--primary-50)'}
+                                                                                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                                                                        >
+                                                                                                            <span style={{ fontSize: '0.65rem' }}>{indicator}</span> <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cg.full_name}</span>
+                                                                                                        </button>
+                                                                                                    )
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             );
