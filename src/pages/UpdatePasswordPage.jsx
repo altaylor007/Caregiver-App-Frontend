@@ -95,7 +95,7 @@ const UpdatePasswordPage = () => {
                 )}
 
                 <form onSubmit={handleSubmit}>
-                    <div className="form-group">
+                    <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                         <label className="form-label">Phone Number <span style={{ color: 'red' }}>*</span></label>
                         <input
                             type="tel"
@@ -105,7 +105,11 @@ const UpdatePasswordPage = () => {
                             value={phone}
                             onChange={(e) => setPhone(e.target.value)}
                         />
-                        <p className="text-xs text-neutral-muted" style={{ marginTop: '0.25rem' }}>Required for SMS shift notifications.</p>
+                        <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-sm)' }}>
+                            <p className="text-xs text-neutral-700" style={{ lineHeight: '1.4', margin: 0 }}>
+                                By providing your phone number and completing setup, you agree to receive SMS scheduling messages from Agnes Care Team. Msg & data rates may apply. Msg frequency varies. Reply STOP to cancel or HELP for help. See our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Privacy Policy</a>.
+                            </p>
+                        </div>
                     </div>
 
                     <div className="form-group">

@@ -814,12 +814,8 @@ const AdminSchedulePage = () => {
                                                 }
 
                                                 const validOpenShifts = openShiftsOnDay.filter(shift => {
-                                                    const shiftHour = new Date(shift.start_time).getHours();
-                                                    if (!avail || avail.status === 'unavailable') return false;
-                                                    if (avail.status === 'available') return true;
-                                                    if (avail.status === 'available_morning' && shiftHour < 12) return true;
-                                                    if (avail.status === 'available_evening' && shiftHour >= 12) return true;
-                                                    return false;
+                                                    if (!avail || avail.status !== 'available') return false;
+                                                    return true;
                                                 });
                                                 const hasValidOpenShift = validOpenShifts.length > 0;
                                                 const canAssign = avail && avail.status !== 'unavailable';
@@ -1071,11 +1067,8 @@ const AdminSchedulePage = () => {
                                                             const shiftHour = new Date(shift.start_time).getHours();
                                                             const validCaregivers = caregivers.filter(cg => {
                                                                 const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
-                                                                if (!avail || avail.status === 'unavailable') return false;
-                                                                if (avail.status === 'available') return true;
-                                                                if (avail.status === 'available_morning' && shiftHour < 12) return true;
-                                                                if (avail.status === 'available_evening' && shiftHour >= 12) return true;
-                                                                return false;
+                                                                if (!avail || avail.status !== 'available') return false;
+                                                                return true;
                                                             });
 
                                                             return (

@@ -96,6 +96,10 @@ const LandingPage = () => {
                 <p style={{ color: 'var(--neutral-500)', fontSize: '0.875rem' }}>
                     Business Address: 724 1St Avenue, St. Paul, MN 55118
                 </p>
+                <p style={{ color: 'var(--neutral-400)', fontSize: '0.875rem', marginTop: '1rem' }}>
+                    <a href="/terms" style={{ color: 'var(--primary-600)', textDecoration: 'none', marginRight: '1rem' }}>Terms of Service</a>
+                    <a href="/privacy" style={{ color: 'var(--primary-600)', textDecoration: 'none' }}>Privacy Policy</a>
+                </p>
                 <p style={{ color: 'var(--neutral-400)', fontSize: '0.75rem', marginTop: '1rem' }}>
                     &copy; {new Date().getFullYear()} Agnes Care Team. All rights reserved.
                 </p>

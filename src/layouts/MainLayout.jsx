@@ -16,13 +16,15 @@ import { supabase } from '../lib/supabase';
 // import AdminPayrollPage from '../pages/AdminPayrollPage'; // This import is added as per instruction.
 
 const MainLayout = () => {
-    const { user, profile, signOut, isAdmin, isSuperAdmin } = useAuth();
+    const { user, profile, signOut, isAdmin, isSuperAdmin, activeRole, setActiveRole } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const navigate = useNavigate();
     const location = useLocation();
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
     const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+
+    const hasMultipleRoles = Boolean((profile?.role === 'admin' || profile?.role === 'manager') && profile?.is_caregiver);
 
     useEffect(() => {
         if (location.pathname.includes('/messages')) {
@@ -113,6 +115,35 @@ const MainLayout = () => {
                     </NavLink>
                 </div>
                 <div style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+
+                    {hasMultipleRoles && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.2rem' }}>
+                            <span className="text-xs text-neutral-500 hidden sm-inline" style={{ fontWeight: 600 }}>Viewing as:</span>
+                            <select
+                                value={activeRole}
+                                onChange={(e) => {
+                                    setActiveRole(e.target.value);
+                                    navigate('/');
+                                }}
+                                className="form-input"
+                                style={{
+                                    padding: '0.25rem 1.5rem 0.25rem 0.5rem',
+                                    fontSize: '0.75rem',
+                                    height: 'auto',
+                                    minHeight: 'auto',
+                                    backgroundColor: activeRole === 'caregiver' ? 'var(--neutral-100)' : 'var(--primary-50)',
+                                    borderColor: activeRole === 'caregiver' ? 'var(--neutral-300)' : 'var(--primary-300)',
+                                    color: activeRole === 'caregiver' ? 'var(--neutral-700)' : 'var(--primary-800)',
+                                    fontWeight: 600,
+                                    margin: 0
+                                }}
+                            >
+                                <option value={profile.role}>{profile.role === 'admin' ? 'Admin' : 'Manager'}</option>
+                                <option value="caregiver">Caregiver</option>
+                            </select>
+                        </div>
+                    )}
+
                     <button
                         onClick={async () => {
                             await signOut();

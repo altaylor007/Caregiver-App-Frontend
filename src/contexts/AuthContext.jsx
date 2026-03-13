@@ -9,6 +9,9 @@ export const AuthProvider = ({ children }) => {
     const [session, setSession] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Tracks the currently active view/role (admin, manager, or caregiver)
+    const [activeRole, setActiveRole] = useState(null);
+
     const fetchProfile = async (userId) => {
         if (!userId) {
             setProfile(null);
@@ -23,10 +26,22 @@ export const AuthProvider = ({ children }) => {
             if (error) {
                 console.error("AuthContext: Supabase error in fetchProfile:", error);
             }
-            if (data) setProfile(data);
+            if (data) {
+                setProfile(data);
+
+                // Set default active role based on hierarchy: admin > manager > caregiver
+                if (data.role === 'admin') {
+                    setActiveRole('admin');
+                } else if (data.role === 'manager') {
+                    setActiveRole('manager');
+                } else {
+                    setActiveRole('caregiver');
+                }
+            }
         } catch (err) {
             console.error("AuthContext: Exception in fetchProfile:", err);
             setProfile(null);
+            setActiveRole(null);
         }
     };
 
@@ -77,9 +92,15 @@ export const AuthProvider = ({ children }) => {
         user,
         profile,
         isLoading,
-        isAdmin: profile?.role === 'admin' || profile?.role === 'manager',
+        activeRole,
+        setActiveRole,
+        // The app's view uses `isAdmin` to determin Admin vs Caregiver layouts
+        isAdmin: activeRole === 'admin' || activeRole === 'manager',
         isSuperAdmin: profile?.role === 'admin',
-        signOut: () => supabase.auth.signOut(),
+        signOut: () => {
+            setActiveRole(null);
+            supabase.auth.signOut();
+        },
     };
 
     return (
