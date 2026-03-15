@@ -93,12 +93,20 @@ const LandingPage = () => {
                 <p style={{ color: 'var(--neutral-500)', marginBottom: '0.5rem', fontWeight: '500' }}>
                     Agnes Care Team (ACT)
                 </p>
-                <p style={{ color: 'var(--neutral-500)', fontSize: '0.875rem' }}>
+                <p style={{ color: 'var(--neutral-500)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
                     Business Address: 724 1St Avenue, St. Paul, MN 55118
+                </p>
+                <div style={{ color: 'var(--neutral-500)', fontSize: '0.875rem', marginBottom: '1rem', display: 'flex', justifyContent: 'center', gap: '2rem' }}>
+                    <span>Email: admin@agnescare.com</span>
+                    <span>Phone: (555) 123-4567</span>
+                </div>
+                <p style={{ color: 'var(--neutral-600)', fontSize: '0.875rem', maxWidth: '600px', margin: '0 auto 1rem auto', lineHeight: '1.5' }}>
+                    We utilize SMS text messaging to send our caregivers account updates, shift notifications, and scheduling reminders.
                 </p>
                 <p style={{ color: 'var(--neutral-400)', fontSize: '0.875rem', marginTop: '1rem' }}>
                     <a href="/terms" style={{ color: 'var(--primary-600)', textDecoration: 'none', marginRight: '1rem' }}>Terms of Service</a>
-                    <a href="/privacy" style={{ color: 'var(--primary-600)', textDecoration: 'none' }}>Privacy Policy</a>
+                    <a href="/privacy" style={{ color: 'var(--primary-600)', textDecoration: 'none', marginRight: '1rem' }}>Privacy Policy</a>
+                    <a href="/opt-in" style={{ color: 'var(--primary-600)', textDecoration: 'none' }}>SMS Opt-In Form Example</a>
                 </p>
                 <p style={{ color: 'var(--neutral-400)', fontSize: '0.75rem', marginTop: '1rem' }}>
                     &copy; {new Date().getFullYear()} Agnes Care Team. All rights reserved.

@@ -19,6 +19,7 @@ import UpdatePasswordPage from './pages/UpdatePasswordPage';
 import LandingPage from './pages/LandingPage';
 import TermsOfServicePage from './pages/TermsOfServicePage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import OptInExamplePage from './pages/OptInExamplePage';
 
 
 import { useAuth } from './contexts/AuthContext';
@@ -54,6 +55,7 @@ function App() {
           <Route path="/welcome" element={session ? <Navigate to="/" replace /> : <LandingPage />} />
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/opt-in" element={<OptInExamplePage />} />
           <Route path="/auth" element={session ? <Navigate to="/" replace /> : <AuthPage />} />
           <Route path="/update-password" element={<ProtectedRoute requirePasswordCheck={false}><UpdatePasswordPage /></ProtectedRoute>} />
 
