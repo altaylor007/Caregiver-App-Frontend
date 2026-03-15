@@ -178,7 +178,7 @@ const OptInExamplePage = () => {
                 <p style={{ color: 'var(--neutral-500)', marginBottom: '0.5rem', fontWeight: '500' }}>Agnes Care Team (ACT)</p>
                 <div style={{ color: 'var(--neutral-500)', fontSize: '0.875rem', marginBottom: '1rem', display: 'flex', justifyContent: 'center', gap: '2rem' }}>
                     <span>Email: admin@agnescare.com</span>
-                    <span>Phone: (555) 123-4567</span>
+                    <span>Phone: (347) 746-6544</span>
                 </div>
                 <p style={{ color: 'var(--neutral-400)', fontSize: '0.75rem', marginTop: '1rem' }}>
                     &copy; {new Date().getFullYear()} Agnes Care Team. All rights reserved.

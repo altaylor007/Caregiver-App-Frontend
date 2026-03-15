@@ -98,7 +98,7 @@ const LandingPage = () => {
                 </p>
                 <div style={{ color: 'var(--neutral-500)', fontSize: '0.875rem', marginBottom: '1rem', display: 'flex', justifyContent: 'center', gap: '2rem' }}>
                     <span>Email: admin@agnescare.com</span>
-                    <span>Phone: (555) 123-4567</span>
+                    <span>Phone: (347) 746-6544</span>
                 </div>
                 <p style={{ color: 'var(--neutral-600)', fontSize: '0.875rem', maxWidth: '600px', margin: '0 auto 1rem auto', lineHeight: '1.5' }}>
                     We utilize SMS text messaging to send our caregivers account updates, shift notifications, and scheduling reminders.
