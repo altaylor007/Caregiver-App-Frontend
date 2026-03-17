@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, subDays, isSameDay, eachDayOfInterval, addWeeks, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, subDays, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
+import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
 
 const AdminSchedulePage = () => {
     // Generate time options in 15-minute increments (00:00 - 23:45)
@@ -22,7 +22,7 @@ const AdminSchedulePage = () => {
     const [shiftTemplates, setShiftTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [currentDate, setCurrentDate] = useState(getTodayInCentral());
 
     // Initialize view mode from URL to persist across reloads
     const [viewMode, setViewModeState] = useState(() => {
@@ -46,7 +46,7 @@ const AdminSchedulePage = () => {
     const [currentShift, setCurrentShift] = useState(null);
     const [applyToWeek, setApplyToWeek] = useState(false);
 
-    const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [date, setDate] = useState(format(getTodayInCentral(), 'yyyy-MM-dd'));
     const [title, setTitle] = useState('');
     const [startTime, setStartTime] = useState('09:00');
     const [endTime, setEndTime] = useState('17:00');
@@ -188,6 +188,7 @@ const AdminSchedulePage = () => {
 
     useEffect(() => {
         fetchData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentDate]);
 
     // Helper: check if a date string falls within any confirmed payroll lock range
@@ -199,7 +200,7 @@ const AdminSchedulePage = () => {
         setCurrentId(null);
         setCurrentShift(null);
         setTitle('');
-        setDate(format(new Date(), 'yyyy-MM-dd'));
+        setDate(format(getTodayInCentral(), 'yyyy-MM-dd'));
         setStartTime('09:30');
         setEndTime('15:30');
         setAssignedTo('');
@@ -217,8 +218,8 @@ const AdminSchedulePage = () => {
         setTitle(shift.title);
         setDate(shift.date);
         // Extract HH:mm from ISO
-        setStartTime(format(parseISO(shift.start_time), 'HH:mm'));
-        setEndTime(format(parseISO(shift.end_time), 'HH:mm'));
+        setStartTime(formatShift(shift.start_time, 'HH:mm'));
+        setEndTime(formatShift(shift.end_time, 'HH:mm'));
 
         if (shift.custom_assigned_name) {
             setAssignedTo('custom');
@@ -260,8 +261,8 @@ const AdminSchedulePage = () => {
         }
 
         if (currentId) {
-            const startIso = new Date(`${date}T${startTime}:00`).toISOString();
-            const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+            const startIso = createShiftIso(date, startTime);
+            const endIso = createShiftIso(date, endTime);
 
             // Check for overlaps (excluding current shift)
             const overlappingShift = shifts.find(s => {
@@ -305,8 +306,8 @@ const AdminSchedulePage = () => {
                     const shiftDate = new Date(sunday);
                     shiftDate.setDate(sunday.getDate() + i);
                     const shiftDateStr = format(shiftDate, 'yyyy-MM-dd');
-                    const startIso = new Date(`${shiftDateStr}T${startTime}:00`).toISOString();
-                    const endIso = new Date(`${shiftDateStr}T${endTime}:00`).toISOString();
+                    const startIso = createShiftIso(shiftDateStr, startTime);
+                    const endIso = createShiftIso(shiftDateStr, endTime);
 
                     // Check for overlap strictly
                     const overlap = shifts.find(s => s.date === shiftDateStr && startIso < s.end_time && endIso > s.start_time);
@@ -334,8 +335,8 @@ const AdminSchedulePage = () => {
                 const res = await supabase.from('shifts').insert(shiftsToCreate);
                 error = res.error;
             } else {
-                const startIso = new Date(`${date}T${startTime}:00`).toISOString();
-                const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+                const startIso = createShiftIso(date, startTime);
+                const endIso = createShiftIso(date, endTime);
 
                 // Check for overlaps for new single shift
                 const overlappingShift = shifts.find(s => s.date === date && startIso < s.end_time && endIso > s.start_time);
@@ -432,6 +433,7 @@ const AdminSchedulePage = () => {
         setRequesting(false);
     };
 
+    // eslint-disable-next-line no-unused-vars
     const quickAssignCaregiver = async (caregiverId, dayStr) => {
         // Find the first open shift on that day
         const openShift = shifts.find(s => s.date === dayStr && !s.assigned_to && !s.custom_assigned_name);
@@ -449,7 +451,7 @@ const AdminSchedulePage = () => {
 
     const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
     const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
-    const goToToday = () => setCurrentDate(new Date());
+    const goToToday = () => setCurrentDate(getTodayInCentral());
 
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
@@ -570,7 +572,7 @@ const AdminSchedulePage = () => {
                                                 }}
                                                 title={`Use template: ${template.title} `}
                                             >
-                                                {template.title} ({format(parseISO(`1970-01-01T${template.start_time.trim()}`), 'h:mma').toLowerCase()} - {format(parseISO(`1970-01-01T${template.end_time.trim()}`), 'h:mma').toLowerCase()})
+                                                {template.title} ({formatShift(createShiftIso('1970-01-01', template.start_time.trim()), 'h:mma').toLowerCase()} - {formatShift(createShiftIso('1970-01-01', template.end_time.trim()), 'h:mma').toLowerCase()})
                                             </button>
                                             <button
                                                 type="button"
@@ -777,7 +779,7 @@ const AdminSchedulePage = () => {
                                     <tr>
                                         <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', position: 'sticky', left: 0, background: 'var(--bg-card)', zIndex: 2, borderBottom: '2px solid var(--neutral-200)', minWidth: '120px', whiteSpace: 'nowrap' }}>Caregiver</th>
                                         {daysInMonth.map(day => {
-                                            const isToday = isSameDay(day, new Date());
+                                            const isToday = isSameDay(day, getTodayInCentral());
                                             return (
                                                 <th key={format(day, 'd')} style={{ padding: '0.25rem 0.1rem', textAlign: 'center', borderBottom: '2px solid var(--neutral-200)', minWidth: '28px', color: isToday ? 'var(--primary-600)' : 'var(--neutral-600)', fontWeight: isToday ? 700 : 500 }}>
                                                     <div>{format(day, 'EEE').charAt(0)}</div>
@@ -796,8 +798,9 @@ const AdminSchedulePage = () => {
                                             {daysInMonth.map((day, dayIdx) => {
                                                 const dayStr = format(day, 'yyyy-MM-dd');
                                                 const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
+                                                // eslint-disable-next-line no-unused-vars
                                                 const openShiftsOnDay = shifts.filter(s => s.date === dayStr && !s.assigned_to && !s.custom_assigned_name);
-                                                const isToday = isSameDay(day, new Date());
+                                                const isToday = isSameDay(day, getTodayInCentral());
 
                                                 let bgColor = 'repeating-linear-gradient(45deg, var(--neutral-50), var(--neutral-50) 5px, var(--neutral-100) 5px, var(--neutral-100) 10px)'; // Hatching for none
                                                 let title = 'No response';
@@ -940,7 +943,7 @@ const AdminSchedulePage = () => {
                                                                                     >
                                                                                         <div style={{ fontWeight: 600 }}>{shift.title}</div>
                                                                                         <div style={{ fontSize: '0.65rem', color: 'var(--neutral-500)' }}>
-                                                                                            {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                                                            {formatShift(shift.start_time, 'h:mma').toLowerCase()} - {formatShift(shift.end_time, 'h:mma').toLowerCase()}
                                                                                         </div>
                                                                                     </button>
                                                                                 ))}
@@ -1037,7 +1040,7 @@ const AdminSchedulePage = () => {
                                                 dayShifts = dayShifts.filter(s => s.assigned_to === filterCaregiverId);
                                             }
 
-                                            const isTodayDay = isSameDay(day, new Date());
+                                            const isTodayDay = isSameDay(day, getTodayInCentral());
                                             const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                             return (
@@ -1064,7 +1067,8 @@ const AdminSchedulePage = () => {
                                                             const locked = isDateLocked(shift.date);
                                                             const cardClass = isAssigned ? 'shift-assigned' : 'shift-open';
 
-                                                            const shiftHour = new Date(shift.start_time).getHours();
+                                                            // eslint-disable-next-line no-unused-vars
+                                                            const shiftHour = parseInt(formatShift(shift.start_time, 'H'), 10);
                                                             const validCaregivers = caregivers.filter(cg => {
                                                                 const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
                                                                 if (!avail || avail.status !== 'available') return false;
@@ -1111,7 +1115,7 @@ const AdminSchedulePage = () => {
                                                                         {shift.title}
                                                                     </div>
                                                                     <div style={{ color: 'var(--neutral-500)', fontSize: '0.7rem', fontWeight: 500 }}>
-                                                                        {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                                        {formatShift(shift.start_time, 'h:mma').toLowerCase()} - {formatShift(shift.end_time, 'h:mma').toLowerCase()}
                                                                     </div>
                                                                     {shift.trade_notes && (
                                                                         <div style={{ marginTop: '0.2rem', fontSize: '0.65rem', color: 'var(--primary-600)', fontWeight: 600 }}>

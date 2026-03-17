@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
+import { formatShift } from '../lib/timeUtils';
 import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap } from 'lucide-react';
 
 // Quick-pick emojis shown in the hover picker
@@ -400,7 +401,7 @@ const MessagesPage = () => {
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>{topic.title}</h3>
-                                            <p className="text-xs text-neutral-muted">Started {format(parseISO(topic.created_at), 'MMM do, yyyy')}</p>
+                                            <p className="text-xs text-neutral-muted">Started {formatShift(topic.created_at, 'MMM do, yyyy')}</p>
                                         </div>
                                         {isAdmin && (
                                             <button
@@ -475,7 +476,7 @@ const MessagesPage = () => {
                                                         {isAdminMsg && !isMine && ' (Admin)'}
                                                     </span>
                                                     <span className="text-xs text-neutral-muted">
-                                                        {format(parseISO(msg.created_at), 'M/d, h:mm a')}
+                                                        {formatShift(msg.created_at, 'M/d, h:mm a')}
                                                     </span>
                                                 </div>
 

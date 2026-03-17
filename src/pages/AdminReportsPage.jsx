@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { differenceInMinutes, parseISO, startOfWeek, endOfWeek, format } from 'date-fns';
+import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 
 const AdminReportsPage = () => {
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(true);
 
     // We'll just default to viewing the current week
-    const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 })); // Monday
+    const [weekStart, setWeekStart] = useState(startOfWeek(getTodayInCentral(), { weekStartsOn: 1 })); // Monday
 
     useEffect(() => {
         const fetchReport = async () => {

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { format, parseISO, isAfter, startOfDay } from 'date-fns';
+import { format, isAfter, startOfDay } from 'date-fns';
+import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, ChevronRight } from 'lucide-react';
 
@@ -15,7 +16,7 @@ const DashboardPage = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             setLoading(true);
-            const today = startOfDay(new Date()).toISOString();
+            const today = startOfDay(getTodayInCentral()).toISOString();
 
             try {
                 // Fetch User's next shift
@@ -96,10 +97,10 @@ const DashboardPage = () => {
                     <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)', borderLeft: '4px solid var(--primary-500)' }}>
                         <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{nextShift.title}</p>
                         <p className="text-sm font-medium">
-                            {format(parseISO(nextShift.date), 'EEEE, MMM do')}
+                            {formatShift(nextShift.start_time, 'EEEE, MMM do')}
                         </p>
                         <p className="text-sm text-neutral-muted">
-                            {format(parseISO(nextShift.start_time), 'h:mm a')} - {format(parseISO(nextShift.end_time), 'h:mm a')}
+                            {formatShift(nextShift.start_time, 'h:mm a')} - {formatShift(nextShift.end_time, 'h:mm a')}
                         </p>
                     </div>
                 ) : (

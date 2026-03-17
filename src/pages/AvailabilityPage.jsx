@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, CheckCircle, Info, MessageSquare, X, ArrowRight } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -14,7 +15,7 @@ const AvailabilityPage = () => {
     const [saveStatus, setSaveStatus] = useState(''); // inline saving indicator
 
     // Context for the grid
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [currentDate, setCurrentDate] = useState(getTodayInCentral());
 
     // Admin Requests
     const [activeRequests, setActiveRequests] = useState([]);
@@ -42,7 +43,7 @@ const AvailabilityPage = () => {
             const { data: reqData, error: reqError } = await supabase
                 .from('availability_requests')
                 .select('*')
-                .gte('end_date', format(new Date(), 'yyyy-MM-dd')) // Only show requests that haven't expired
+                .gte('end_date', format(getTodayInCentral(), 'yyyy-MM-dd')) // Only show requests that haven't expired
                 .order('created_at', { ascending: false });
 
             if (reqError) throw reqError;
@@ -199,13 +200,13 @@ const AvailabilityPage = () => {
     };
 
     const nextMonth = () => {
-        const d = new Date(currentDate);
+        const d = new Date(currentDate.getTime());
         d.setMonth(d.getMonth() + 1);
         setCurrentDate(d);
     };
 
     const prevMonth = () => {
-        const d = new Date(currentDate);
+        const d = new Date(currentDate.getTime());
         d.setMonth(d.getMonth() - 1);
         setCurrentDate(d);
     };
@@ -488,7 +489,7 @@ const AvailabilityPage = () => {
                             </button>
                         </div>
                         <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                            Add a note for <strong>{format(parseISO(selectedDateForNote), 'MMMM d, yyyy')}</strong>. This will be visible to the Admin/Manager when scheduling.
+                            Add a note for <strong>{formatShift(createShiftIso(selectedDateForNote, '00:00'), 'MMMM d, yyyy')}</strong>. This will be visible to the Admin/Manager when scheduling.
                         </p>
                         <textarea
                             className="input"

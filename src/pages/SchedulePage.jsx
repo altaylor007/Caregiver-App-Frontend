@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
+import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { ChevronLeft, ChevronRight, CalendarCheck, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -21,7 +22,7 @@ const SchedulePage = () => {
     const [selectedCaregiverForTrade, setSelectedCaregiverForTrade] = useState('');
     const [tradeSubmitting, setTradeSubmitting] = useState(false);
 
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [currentDate, setCurrentDate] = useState(getTodayInCentral());
     const [showOnlyMyShifts, setShowOnlyMyShifts] = useState(false);
     const [printMode, setPrintMode] = useState(false); // 'full' | 'mine' | false
 
@@ -97,10 +98,11 @@ const SchedulePage = () => {
 
     useEffect(() => {
         if (user) fetchSchedule();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, currentDate]);
 
     const handlePickUpShift = async (shift) => {
-        if (!window.confirm(`Pick up the ${shift.title} shift on ${format(parseISO(shift.date), 'MMM do')}?`)) return;
+        if (!window.confirm(`Pick up the ${shift.title} shift on ${formatShift(shift.start_time, 'MMM do')}?`)) return;
 
         const { error } = await supabase
             .from('shifts')
@@ -206,7 +208,7 @@ const SchedulePage = () => {
 
     const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
     const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
-    const goToToday = () => setCurrentDate(new Date());
+    const goToToday = () => setCurrentDate(getTodayInCentral());
 
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
@@ -298,7 +300,7 @@ const SchedulePage = () => {
                                 <div>
                                     <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{trade.shifts?.title}</div>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--neutral-600)' }}>
-                                        {format(parseISO(trade.shifts?.date), 'EEEE, MMM do')} | {format(parseISO(trade.shifts?.start_time), 'h:mma').toLowerCase()} - {format(parseISO(trade.shifts?.end_time), 'h:mma').toLowerCase()}
+                                        {formatShift(trade.shifts?.start_time || createShiftIso(trade.shifts?.date, '00:00'), 'EEEE, MMM do')} | {formatShift(trade.shifts?.start_time, 'h:mma').toLowerCase()} - {formatShift(trade.shifts?.end_time, 'h:mma').toLowerCase()}
                                     </div>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.2rem' }}>
                                         Requested by: <strong>{trade.requester_name}</strong>
@@ -321,8 +323,8 @@ const SchedulePage = () => {
                         <h3 style={{ marginBottom: '1rem', marginTop: 0 }}>Trade Shift</h3>
                         <div style={{ marginBottom: '1.5rem', fontSize: '0.875rem' }}>
                             <div style={{ fontWeight: 600 }}>{shiftToTrade.title}</div>
-                            <div style={{ color: 'var(--neutral-600)' }}>{format(parseISO(shiftToTrade.date), 'EEEE, MMMM d, yyyy')}</div>
-                            <div style={{ color: 'var(--neutral-600)' }}>{format(parseISO(shiftToTrade.start_time), 'h:mma')} - {format(parseISO(shiftToTrade.end_time), 'h:mma')}</div>
+                            <div style={{ color: 'var(--neutral-600)' }}>{formatShift(shiftToTrade.start_time || createShiftIso(shiftToTrade.date, '00:00'), 'EEEE, MMMM d, yyyy')}</div>
+                            <div style={{ color: 'var(--neutral-600)' }}>{formatShift(shiftToTrade.start_time, 'h:mma')} - {formatShift(shiftToTrade.end_time, 'h:mma')}</div>
                         </div>
 
                         <div className="form-group">
@@ -387,7 +389,7 @@ const SchedulePage = () => {
                                     dayShifts = dayShifts.filter(s => s.assigned_to === user.id);
                                 }
 
-                                const isTodayDay = isSameDay(day, new Date());
+                                const isTodayDay = isSameDay(day, getTodayInCentral());
                                 const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                 return (
@@ -413,7 +415,7 @@ const SchedulePage = () => {
                                                     <div key={shift.id} className={`shift-card-mini ${cardClass}`}>
                                                         <div style={{ fontWeight: 600, marginBottom: '0.15rem' }}>{shift.title}</div>
                                                         <div style={{ color: 'var(--neutral-600)', marginBottom: isOtherCaregiver || isMine ? '0.25rem' : '0.5rem', fontSize: '0.7rem' }}>
-                                                            {format(parseISO(shift.start_time), 'h:mma').toLowerCase()} - {format(parseISO(shift.end_time), 'h:mma').toLowerCase()}
+                                                            {formatShift(shift.start_time, 'h:mma').toLowerCase()} - {formatShift(shift.end_time, 'h:mma').toLowerCase()}
                                                         </div>
 
                                                         {/* Show assigned name for non-open shifts */}
