@@ -6,7 +6,6 @@ const OptInExamplePage = () => {
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
-    const [consentMarketing, setConsentMarketing] = useState(false);
     const [consentNonMarketing, setConsentNonMarketing] = useState(false);
     const [submitted, setSubmitted] = useState(false);
 
@@ -127,7 +126,7 @@ const OptInExamplePage = () => {
                                 />
                             </div>
 
-                            <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                            <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
                                 <input
                                     type="checkbox"
                                     id="consentNonMarketing"
@@ -137,27 +136,14 @@ const OptInExamplePage = () => {
                                     style={{ marginTop: '0.25rem', width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
                                 />
                                 <label htmlFor="consentNonMarketing" style={{ fontSize: '0.9rem', color: 'var(--neutral-700)', lineHeight: '1.5', cursor: 'pointer' }}>
-                                    I consent to receive non-marketing text messages from Agnes Care Team about account updates, schedule changes, and shift reminders. Frequency may vary. Message & data rates may apply. Text HELP for assistance, reply STOP to opt out.
-                                </label>
-                            </div>
-
-                            <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                                <input
-                                    type="checkbox"
-                                    id="consentMarketing"
-                                    checked={consentMarketing}
-                                    onChange={(e) => setConsentMarketing(e.target.checked)}
-                                    style={{ marginTop: '0.25rem', width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-                                />
-                                <label htmlFor="consentMarketing" style={{ fontSize: '0.9rem', color: 'var(--neutral-700)', lineHeight: '1.5', cursor: 'pointer' }}>
-                                    I consent to receive marketing text messages from Agnes Care Team at the phone number provided. Frequency may vary. Message & data rates may apply. Text HELP for assistance, reply STOP to opt out.
+                                    I agree to receive SMS account update and schedule notifications from Agnes Care Team. Frequency may vary. Message & data rates may apply. Text HELP for assistance, reply STOP to opt out.
                                 </label>
                             </div>
 
                             <div style={{ marginBottom: '2rem' }}>
-                                <a href="/terms" style={{ color: 'var(--primary-600)', fontWeight: 'bold', textDecoration: 'none', marginRight: '1rem' }} target="_blank" rel="noopener noreferrer">Terms of Service</a>
+                                <a href="/terms" style={{ color: 'var(--primary-600)', fontWeight: 'bold', textDecoration: 'none', marginRight: '1rem', fontSize: '0.9rem' }} target="_blank" rel="noopener noreferrer">Terms of Service</a>
                                 <span style={{ color: 'var(--neutral-400)' }}>&amp;</span>
-                                <a href="/privacy" style={{ color: 'var(--primary-600)', fontWeight: 'bold', textDecoration: 'none', marginLeft: '1rem' }} target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+                                <a href="/privacy" style={{ color: 'var(--primary-600)', fontWeight: 'bold', textDecoration: 'none', marginLeft: '1rem', fontSize: '0.9rem' }} target="_blank" rel="noopener noreferrer">Privacy Policy</a>
                             </div>
 
                             <button type="submit" className="btn btn-primary" style={{ padding: '0.75rem 2rem', fontSize: '1rem' }}>

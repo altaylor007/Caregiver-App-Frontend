@@ -195,7 +195,7 @@ const ProfilePage = () => {
 
                 <div style={{ marginBottom: '1.5rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
                     <p className="text-xs text-neutral-700" style={{ lineHeight: '1.4' }}>
-                        By providing your phone number and enabling SMS Notifications, you agree to receive scheduling and notification messages from Agnes Care Team. Msg & data rates may apply. Msg frequency varies. Reply STOP to cancel or HELP for help. See our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Privacy Policy</a>.
+                        By providing your phone number and enabling SMS Notifications, you agree to receive SMS account update and schedule notifications from Agnes Care Team. Msg & data rates may apply. Msg frequency varies. Reply STOP to cancel or HELP for help. See our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Privacy Policy</a>.
                     </p>
                 </div>
 
