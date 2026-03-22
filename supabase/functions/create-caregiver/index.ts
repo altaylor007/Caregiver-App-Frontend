@@ -62,8 +62,8 @@ serve(async (req) => {
     let profileUpdated = false;
     let lastError = null;
 
-    for (let attempts = 0; attempts < 5; attempts++) {
-      const { error: profileError } = await supabaseAdmin
+    for (let attempts = 0; attempts < 20; attempts++) {
+      const { data: updatedData, error: profileError } = await supabaseAdmin
         .from('users')
         .update({
           full_name: fullName,
@@ -73,14 +73,15 @@ serve(async (req) => {
           is_caregiver: true,
           requires_password_change: true,
         })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select();
 
-      if (!profileError) {
+      if (!profileError && updatedData && updatedData.length > 0) {
         profileUpdated = true;
         break;
       }
 
-      lastError = profileError;
+      lastError = profileError || new Error("Row not found yet");
       await wait(500); // Wait 500ms before retrying
     }
 
@@ -93,7 +94,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     );
 
-  } catch (error) {
+  } catch (error: any) {
     return new Response(
       JSON.stringify({ error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }

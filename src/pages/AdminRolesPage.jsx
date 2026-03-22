@@ -179,9 +179,11 @@ const AdminRolesPage = () => {
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', padding: '0.1rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: 600, backgroundColor: u.role === 'admin' ? 'var(--primary-200)' : u.role === 'manager' ? 'var(--primary-100)' : 'var(--neutral-100)', color: u.role === 'admin' ? 'var(--primary-800)' : u.role === 'manager' ? 'var(--primary-700)' : 'var(--neutral-600)' }}>
                                         {u.role === 'admin' ? <><ShieldAlert size={12} /> Admin</> : u.role === 'manager' ? <><ShieldCheck size={12} /> Manager</> : 'Caregiver'}
                                     </div>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', marginLeft: '0.5rem', padding: '0.1rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: 600, backgroundColor: u.is_caregiver ? 'var(--success-100)' : 'var(--neutral-100)', color: u.is_caregiver ? 'var(--success-700)' : 'var(--neutral-600)' }}>
-                                        {u.is_caregiver ? 'Acts as Caregiver' : 'Not a Caregiver'}
-                                    </div>
+                                    {u.role !== 'caregiver' && (
+                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', marginLeft: '0.5rem', padding: '0.1rem 0.5rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: 600, backgroundColor: u.is_caregiver ? 'var(--success-100)' : 'var(--neutral-100)', color: u.is_caregiver ? 'var(--success-700)' : 'var(--neutral-600)' }}>
+                                            {u.is_caregiver ? 'Acts as Caregiver' : 'Not a Caregiver'}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

@@ -202,16 +202,37 @@ const MessagesPage = () => {
     const handleDeleteTopic = async (topicId, e) => {
         e.stopPropagation();
         if (!window.confirm('Delete this entire thread and all its messages?')) return;
+
         // Cascade deletes messages if FK is set, otherwise delete messages first
-        await supabase.from('messages').delete().eq('topic_id', topicId);
-        await supabase.from('message_topics').delete().eq('id', topicId);
+        const { error: msgError } = await supabase.from('messages').delete().eq('topic_id', topicId);
+        if (msgError) {
+            console.error('Error deleting messages:', msgError);
+            alert('Could not delete messages: ' + msgError.message);
+            return;
+        }
+
+        const { error: topicError } = await supabase.from('message_topics').delete().eq('id', topicId);
+        if (topicError) {
+            console.error('Error deleting topic:', topicError);
+            alert('Could not delete topic: ' + topicError.message);
+            return;
+        }
+
         fetchTopics();
     };
 
     const handleDeleteMessage = async (msgId) => {
         if (!window.confirm('Delete this message?')) return;
+
         await supabase.from('message_reactions').delete().eq('message_id', msgId);
-        await supabase.from('messages').delete().eq('id', msgId);
+
+        const { error: msgError } = await supabase.from('messages').delete().eq('id', msgId);
+        if (msgError) {
+            console.error('Error deleting message:', msgError);
+            alert('Could not delete message: ' + msgError.message);
+            return;
+        }
+
         fetchMessages(activeTopic.id);
     };
 

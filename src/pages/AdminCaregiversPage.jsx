@@ -20,6 +20,13 @@ const AdminCaregiversPage = () => {
     // State for email generation dialog
     const [draftEmailInfo, setDraftEmailInfo] = useState(null);
 
+    // State for Invite Modal
+    const [inviteModalOpen, setInviteModalOpen] = useState(false);
+    const [inviteCaregiver, setInviteCaregiver] = useState(null);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [invitePhone, setInvitePhone] = useState('');
+    const [isInviting, setIsInviting] = useState(false);
+
     const fetchCaregivers = async () => {
         setLoading(true);
         const { data, error } = await supabase
@@ -64,8 +71,8 @@ const AdminCaregiversPage = () => {
             // If they provided a phone but no email, generate a dummy login email
             targetEmail = `${newPhone.replace(/\D/g, '')}@act.login`;
         } else if (!isEmailValid && !isPhoneProvided) {
-            setErrorMsg("Please provide an email address or a phone number.");
-            return;
+            // Generate a dummy email for manual uninvited profiles
+            targetEmail = `manual_${Date.now()}@act.login`;
         }
 
         if (!newFirstName.trim()) {
@@ -94,12 +101,17 @@ const AdminCaregiversPage = () => {
 
             setSuccessMsg(`Success! Caregiver created.`);
 
-            // Show the email draft dialog instead of auto-opening mailto
-            setDraftEmailInfo({
-                email: targetEmail,
-                password: passwordToUse,
-                phone: newPhone
-            });
+            if (isEmailValid || isPhoneProvided) {
+                // Show the email draft dialog instead of auto-opening mailto
+                setDraftEmailInfo({
+                    email: targetEmail,
+                    password: passwordToUse,
+                    phone: newPhone
+                });
+            } else {
+                // For fully manual accounts, just show success Message, clear form
+                setSuccessMsg(`Success! Manual profile created. You can invite them later from the team list.`);
+            }
 
             setNewEmail('');
             setNewFirstName('');
@@ -114,6 +126,61 @@ const AdminCaregiversPage = () => {
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleInviteSubmit = async (e) => {
+        e.preventDefault();
+        setIsInviting(true);
+        setErrorMsg('');
+
+        const isEmailValid = inviteEmail && inviteEmail.includes('@');
+        const isPhoneProvided = invitePhone && invitePhone.trim().length > 0;
+
+        if (!isEmailValid && !isPhoneProvided) {
+            setErrorMsg("Please provide an email or phone number to invite.");
+            setIsInviting(false);
+            return;
+        }
+
+        const passwordToUse = 'Agnes2026'; // the default
+
+        try {
+            const { data, error: invokeError } = await supabase.functions.invoke('update-user-contact', {
+                body: {
+                    userId: inviteCaregiver.id,
+                    email: isEmailValid ? inviteEmail : null,
+                    phone: isPhoneProvided ? invitePhone : null,
+                    password: passwordToUse
+                }
+            });
+
+            if (invokeError) throw invokeError;
+            if (data?.error) throw new Error(data.error);
+
+            setSuccessMsg(`Success! Caregiver info updated.`);
+            setDraftEmailInfo({
+                email: isEmailValid ? inviteEmail : (inviteCaregiver.email || `${invitePhone.replace(/\D/g, '')}@act.login`),
+                password: passwordToUse,
+                phone: invitePhone || inviteCaregiver.phone
+            });
+
+            setInviteModalOpen(false);
+            setInviteCaregiver(null);
+            fetchCaregivers();
+        } catch (error) {
+            setErrorMsg("Error updating caregiver info. Ensure the email is not already in use.");
+            console.error(error);
+        } finally {
+            setIsInviting(false);
+        }
+    };
+
+    const openInviteModal = (cg) => {
+        setInviteCaregiver(cg);
+        setInviteEmail('');
+        setInvitePhone(cg.phone || '');
+        setInviteModalOpen(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const toggleStatus = async (id, currentStatus) => {
@@ -391,6 +458,54 @@ const AdminCaregiversPage = () => {
                     </button>
                 </form>
 
+                {/* Invite Modal */}
+                {inviteModalOpen && inviteCaregiver && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        padding: '1.5rem',
+                        backgroundColor: 'white',
+                        border: '1px solid var(--neutral-200)',
+                        borderRadius: 'var(--radius-lg)',
+                        boxShadow: 'var(--shadow-md)'
+                    }}>
+                        <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Mail size={18} /> Add Contact Info to Invite {inviteCaregiver.first_name}
+                        </h4>
+                        <form onSubmit={handleInviteSubmit}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Email Address</label>
+                                    <input
+                                        type="email"
+                                        className="form-input"
+                                        placeholder="e.g. jane@example.com"
+                                        value={inviteEmail}
+                                        onChange={(e) => setInviteEmail(e.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Phone Number</label>
+                                    <input
+                                        type="tel"
+                                        className="form-input"
+                                        placeholder="e.g. (555) 123-4567"
+                                        value={invitePhone}
+                                        onChange={(e) => setInvitePhone(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button type="submit" disabled={isInviting} className="btn btn-primary" style={{ flex: 1 }}>
+                                    {isInviting ? 'Updating...' : 'Update & Send Invite'}
+                                </button>
+                                <button type="button" onClick={() => { setInviteModalOpen(false); setInviteCaregiver(null); }} className="btn btn-secondary">
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+
                 {/* Email/Text Draft Dialog */}
                 {draftEmailInfo && (
                     <div style={{
@@ -475,6 +590,27 @@ const AdminCaregiversPage = () => {
                                     {cg.phone || <span style={{ fontStyle: 'italic' }}>No phone on file</span>}
                                 </p>
                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+
+                                    {(cg.email && cg.email.endsWith('@act.login')) && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
+                                            <div style={{ flex: 1 }}>
+                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary-700)', display: 'block' }}>Connect Account</span>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)' }}>Uninvited</span>
+                                            </div>
+                                            <button
+                                                onClick={() => openInviteModal(cg)}
+                                                className="btn btn-primary"
+                                                style={{
+                                                    padding: '0.2rem 0.5rem',
+                                                    fontSize: '0.75rem',
+                                                    display: 'flex', alignItems: 'center', gap: '0.3rem'
+                                                }}
+                                            >
+                                                <Mail size={13} /> Add Info & Invite
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
                                         <div style={{ flex: 1 }}>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', display: 'block' }}>Account Access</span>
