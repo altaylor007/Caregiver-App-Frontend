@@ -45,8 +45,6 @@ const SchedulePage = () => {
             .select('*, users(full_name, first_name)')
             .gte('date', startDateStr)
             .lte('date', endDateStr)
-            .or(`assigned_to.eq.${user?.id},is_open.eq.true`)
-            .is('custom_assigned_name', null)
             .order('start_time', { ascending: true });
 
         if (data) setShifts(data);
@@ -104,10 +102,7 @@ const SchedulePage = () => {
     const handlePickUpShift = async (shift) => {
         if (!window.confirm(`Pick up the ${shift.title} shift on ${formatShift(shift.start_time, 'MMM do')}?`)) return;
 
-        const { error } = await supabase
-            .from('shifts')
-            .update({ assigned_to: user.id, is_open: false })
-            .eq('id', shift.id);
+        const { error } = await supabase.rpc('claim_open_shift', { shift_uuid: shift.id });
 
         if (error) {
             alert("Error picking up shift: " + error.message);

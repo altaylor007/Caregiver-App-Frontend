@@ -108,20 +108,27 @@ const DashboardPage = () => {
                 )}
             </div>
 
-            <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+                className="card hover-card"
+                onClick={() => navigate('/schedule')}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginTop: '1rem' }}
+            >
                 <div>
-                    <h3>Open Shifts</h3>
-                    <p className="text-sm text-neutral-muted" style={{ marginTop: '0.25rem' }}>Pick up extra hours</p>
+                    <h3 style={{ margin: 0 }}>Open Shifts</h3>
+                    <p className="text-sm text-neutral-muted" style={{ margin: 0, marginTop: '0.25rem' }}>Pick up extra hours</p>
                 </div>
-                <div style={{
-                    backgroundColor: openShiftsCount > 0 ? 'var(--warning-100)' : 'var(--neutral-100)',
-                    color: openShiftsCount > 0 ? 'var(--warning-600)' : 'var(--neutral-500)',
-                    padding: '0.5rem 1rem',
-                    borderRadius: 'var(--radius-xl)',
-                    fontWeight: 'bold',
-                    fontSize: '1.25rem'
-                }}>
-                    {openShiftsCount}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{
+                        backgroundColor: openShiftsCount > 0 ? 'var(--warning-100)' : 'var(--neutral-100)',
+                        color: openShiftsCount > 0 ? 'var(--warning-600)' : 'var(--neutral-500)',
+                        padding: '0.5rem 1rem',
+                        borderRadius: 'var(--radius-xl)',
+                        fontWeight: 'bold',
+                        fontSize: '1.25rem'
+                    }}>
+                        {openShiftsCount}
+                    </div>
+                    <ChevronRight className="text-neutral-400" />
                 </div>
             </div>
 

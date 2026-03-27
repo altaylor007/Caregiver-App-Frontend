@@ -27,6 +27,11 @@ const AdminCaregiversPage = () => {
     const [invitePhone, setInvitePhone] = useState('');
     const [isInviting, setIsInviting] = useState(false);
 
+    // Additional Invite/Update Modal State
+    const [sendInvite, setSendInvite] = useState(false);
+    const [resetPassword, setResetPassword] = useState(false);
+    const [inviteMethod, setInviteMethod] = useState('email');
+
     const fetchCaregivers = async () => {
         setLoading(true);
         const { data, error } = await supabase
@@ -137,36 +142,71 @@ const AdminCaregiversPage = () => {
         const isPhoneProvided = invitePhone && invitePhone.trim().length > 0;
 
         if (!isEmailValid && !isPhoneProvided) {
-            setErrorMsg("Please provide an email or phone number to invite.");
+            setErrorMsg("Please provide a valid email or phone number.");
             setIsInviting(false);
             return;
         }
 
-        const passwordToUse = 'Agnes2026'; // the default
+        const payload = {
+            userId: inviteCaregiver.id,
+            email: isEmailValid ? inviteEmail : null,
+            phone: isPhoneProvided ? invitePhone : null,
+        };
+
+        if (sendInvite && resetPassword) {
+            payload.password = 'Agnes2026';
+        }
 
         try {
             const { data, error: invokeError } = await supabase.functions.invoke('update-user-contact', {
-                body: {
-                    userId: inviteCaregiver.id,
-                    email: isEmailValid ? inviteEmail : null,
-                    phone: isPhoneProvided ? invitePhone : null,
-                    password: passwordToUse
-                }
+                body: payload
             });
 
             if (invokeError) throw invokeError;
             if (data?.error) throw new Error(data.error);
 
-            setSuccessMsg(`Success! Caregiver info updated.`);
-            setDraftEmailInfo({
-                email: isEmailValid ? inviteEmail : (inviteCaregiver.email || `${invitePhone.replace(/\D/g, '')}@act.login`),
-                password: passwordToUse,
-                phone: invitePhone || inviteCaregiver.phone
-            });
-
+            setSuccessMsg(`Success! Caregiver contact info updated.`);
             setInviteModalOpen(false);
             setInviteCaregiver(null);
             fetchCaregivers();
+
+            if (sendInvite) {
+                const draftInfo = {
+                    email: isEmailValid ? inviteEmail : (inviteCaregiver.email || `${invitePhone.replace(/\\D/g, '')}@act.login`),
+                    password: resetPassword ? 'Agnes2026' : 'unchanged',
+                    phone: isPhoneProvided ? invitePhone : inviteCaregiver.phone
+                };
+
+                if (inviteMethod === 'sms') {
+                    // Automatically send SMS
+                    let targetPhone = draftInfo.phone;
+                    if (!targetPhone) {
+                        alert("No phone number provided for SMS invite.");
+                    } else {
+                        let formattedPhone = targetPhone.replace(/\\D/g, '');
+                        if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
+                        else if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) formattedPhone = `+${formattedPhone}`;
+
+                        const body = generateMessage(draftInfo.email, draftInfo.password);
+                        setSendingSMS(true);
+                        try {
+                            const { data: smsData, error: smsError } = await supabase.functions.invoke('send-sms', {
+                                body: { to: formattedPhone, messageBody: body }
+                            });
+                            if (smsError) throw smsError;
+                            if (smsData?.error) throw new Error(smsData.error);
+                            alert('SMS invitation sent successfully via Twilio!');
+                        } catch (err) {
+                            alert('Failed to send SMS: ' + err.message);
+                        } finally {
+                            setSendingSMS(false);
+                        }
+                    }
+                } else {
+                    // Email chosen
+                    setDraftEmailInfo(draftInfo);
+                }
+            }
         } catch (error) {
             setErrorMsg("Error updating caregiver info. Ensure the email is not already in use.");
             console.error(error);
@@ -177,8 +217,11 @@ const AdminCaregiversPage = () => {
 
     const openInviteModal = (cg) => {
         setInviteCaregiver(cg);
-        setInviteEmail('');
+        setInviteEmail(cg.email && !cg.email.endsWith('@act.login') ? cg.email : '');
         setInvitePhone(cg.phone || '');
+        setSendInvite(false);
+        setResetPassword(false);
+        setInviteMethod('email');
         setInviteModalOpen(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -469,7 +512,7 @@ const AdminCaregiversPage = () => {
                         boxShadow: 'var(--shadow-md)'
                     }}>
                         <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <Mail size={18} /> Add Contact Info to Invite {inviteCaregiver.first_name}
+                            <UserPlus size={18} /> Edit Contact Info for {inviteCaregiver.first_name}
                         </h4>
                         <form onSubmit={handleInviteSubmit}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -494,9 +537,59 @@ const AdminCaregiversPage = () => {
                                     />
                                 </div>
                             </div>
+
+                            <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, cursor: 'pointer', marginBottom: sendInvite ? '1rem' : 0 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={sendInvite}
+                                        onChange={(e) => setSendInvite(e.target.checked)}
+                                        style={{ width: '1rem', height: '1rem' }}
+                                    />
+                                    Send updated invite to user?
+                                </label>
+
+                                {sendInvite && (
+                                    <div style={{ paddingLeft: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={resetPassword}
+                                                onChange={(e) => setResetPassword(e.target.checked)}
+                                            />
+                                            Reset password to default (Agnes2026)?
+                                        </label>
+
+                                        <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem' }}>
+                                            <span style={{ fontWeight: 500, fontSize: '0.875rem' }}>Notify via:</span>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="inviteMethod"
+                                                    value="email"
+                                                    checked={inviteMethod === 'email'}
+                                                    onChange={() => setInviteMethod('email')}
+                                                />
+                                                Email
+                                            </label>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="inviteMethod"
+                                                    value="sms"
+                                                    checked={inviteMethod === 'sms'}
+                                                    onChange={() => setInviteMethod('sms')}
+                                                />
+                                                SMS (Twilio)
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             <div style={{ display: 'flex', gap: '1rem' }}>
                                 <button type="submit" disabled={isInviting} className="btn btn-primary" style={{ flex: 1 }}>
-                                    {isInviting ? 'Updating...' : 'Update & Send Invite'}
+                                    {isInviting ? 'Saving...' : sendInvite ? 'Save & Send Invite' : 'Save Contact Info'}
                                 </button>
                                 <button type="button" onClick={() => { setInviteModalOpen(false); setInviteCaregiver(null); }} className="btn btn-secondary">
                                     Cancel
@@ -591,25 +684,25 @@ const AdminCaregiversPage = () => {
                                 </p>
                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
 
-                                    {(cg.email && cg.email.endsWith('@act.login')) && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
-                                            <div style={{ flex: 1 }}>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary-700)', display: 'block' }}>Connect Account</span>
-                                                <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)' }}>Uninvited</span>
-                                            </div>
-                                            <button
-                                                onClick={() => openInviteModal(cg)}
-                                                className="btn btn-primary"
-                                                style={{
-                                                    padding: '0.2rem 0.5rem',
-                                                    fontSize: '0.75rem',
-                                                    display: 'flex', alignItems: 'center', gap: '0.3rem'
-                                                }}
-                                            >
-                                                <Mail size={13} /> Add Info & Invite
-                                            </button>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', display: 'block' }}>Manage Profile</span>
                                         </div>
-                                    )}
+                                        <button
+                                            onClick={() => openInviteModal(cg)}
+                                            className="btn"
+                                            style={{
+                                                padding: '0.2rem 0.5rem',
+                                                fontSize: '0.75rem',
+                                                backgroundColor: 'var(--primary-50)',
+                                                color: 'var(--primary-700)',
+                                                border: '1px solid var(--primary-200)',
+                                                display: 'flex', alignItems: 'center', gap: '0.3rem'
+                                            }}
+                                        >
+                                            <UserPlus size={13} /> Edit Contact Info
+                                        </button>
+                                    </div>
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
                                         <div style={{ flex: 1 }}>

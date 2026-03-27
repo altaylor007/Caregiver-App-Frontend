@@ -107,24 +107,28 @@ const AvailabilityPage = () => {
     const [selectedTool, setSelectedTool] = useState('available');
 
     const handleApplyTool = async (dateStr) => {
-        let isClear = false;
-        let appliedTool = selectedTool;
+        const currentData = availabilityMap[dateStr] || {};
+        const existingNote = currentData.notes || null;
+
+        let finalStatus = selectedTool;
+        let willBeClear = false;
+
+        if (currentData.status === selectedTool || selectedTool === 'clear') {
+            if (existingNote) {
+                finalStatus = null; // Just clear the status, keep the note
+            } else {
+                willBeClear = true; // No note, clear status -> delete entirely
+                finalStatus = null;
+            }
+        }
 
         // Optimistic UI update
         setAvailabilityMap(prev => {
             const newMap = { ...prev };
-            const existingNote = newMap[dateStr]?.notes || null;
-
-            if (newMap[dateStr]?.status === selectedTool || selectedTool === 'clear') {
-                if (existingNote) {
-                    // Just clear the status, keep the note
-                    newMap[dateStr] = { status: null, notes: existingNote };
-                } else {
-                    delete newMap[dateStr];
-                }
-                isClear = !existingNote && selectedTool === 'clear'; // Only fully delete if no note exists
+            if (willBeClear) {
+                delete newMap[dateStr];
             } else {
-                newMap[dateStr] = { status: selectedTool, notes: existingNote };
+                newMap[dateStr] = { status: finalStatus, notes: existingNote };
             }
             return newMap;
         });
@@ -132,20 +136,19 @@ const AvailabilityPage = () => {
         // Fire & Forget DB operation
         setSaveStatus('Saving...');
         try {
-            if (isClear) {
+            if (willBeClear) {
                 await supabase
                     .from('availability_responses')
                     .delete()
                     .eq('user_id', user.id)
                     .eq('date', dateStr);
             } else {
-                const existingNote = availabilityMap[dateStr]?.notes || null;
                 await supabase
                     .from('availability_responses')
                     .upsert({
                         user_id: user.id,
                         date: dateStr,
-                        status: appliedTool === 'clear' ? null : appliedTool,
+                        status: finalStatus,
                         notes: existingNote,
                         updated_at: new Date().toISOString()
                     }, { onConflict: 'user_id,date' });

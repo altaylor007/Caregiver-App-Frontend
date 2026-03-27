@@ -148,7 +148,9 @@ const AdminSchedulePage = () => {
             .from('users')
             .select('id, full_name, first_name, last_name')
             .eq('is_caregiver', true)
-            .eq('status', 'active');
+            .eq('status', 'active')
+            .order('first_name', { ascending: true })
+            .order('last_name', { ascending: true });
 
         // Fetch availability responses for this entire month (all statuses for full picture)
         const availabilityData = await supabase
@@ -164,7 +166,14 @@ const AdminSchedulePage = () => {
             .order('created_at', { ascending: true });
 
         if (shiftsData.data) setShifts(shiftsData.data);
-        if (caregiversData.data) setCaregivers(caregiversData.data);
+        if (caregiversData.data) {
+            const sortedCG = caregiversData.data.sort((a, b) => {
+                const nameA = (a.first_name || a.full_name || '').toLowerCase();
+                const nameB = (b.first_name || b.full_name || '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+            setCaregivers(sortedCG);
+        }
         if (availabilityData.data) setAvailabilityResponses(availabilityData.data);
         if (templatesData.data) setShiftTemplates(templatesData.data);
 
@@ -265,10 +274,12 @@ const AdminSchedulePage = () => {
             const endIso = createShiftIso(date, endTime);
 
             // Check for overlaps (excluding current shift)
+            const overlapStartMs = new Date(startIso).getTime();
+            const overlapEndMs = new Date(endIso).getTime();
             const overlappingShift = shifts.find(s => {
                 if (s.id === currentId) return false;
                 if (s.date !== date) return false;
-                return (startIso < s.end_time && endIso > s.start_time);
+                return (overlapStartMs < new Date(s.end_time).getTime() && overlapEndMs > new Date(s.start_time).getTime());
             });
 
             if (overlappingShift) {
@@ -310,7 +321,9 @@ const AdminSchedulePage = () => {
                     const endIso = createShiftIso(shiftDateStr, endTime);
 
                     // Check for overlap strictly
-                    const overlap = shifts.find(s => s.date === shiftDateStr && startIso < s.end_time && endIso > s.start_time);
+                    const overlapStartMs = new Date(startIso).getTime();
+                    const overlapEndMs = new Date(endIso).getTime();
+                    const overlap = shifts.find(s => s.date === shiftDateStr && overlapStartMs < new Date(s.end_time).getTime() && overlapEndMs > new Date(s.start_time).getTime());
                     if (overlap) {
                         hasOverlap = true;
                         break;
@@ -339,7 +352,9 @@ const AdminSchedulePage = () => {
                 const endIso = createShiftIso(date, endTime);
 
                 // Check for overlaps for new single shift
-                const overlappingShift = shifts.find(s => s.date === date && startIso < s.end_time && endIso > s.start_time);
+                const overlapStartMs = new Date(startIso).getTime();
+                const overlapEndMs = new Date(endIso).getTime();
+                const overlappingShift = shifts.find(s => s.date === date && overlapStartMs < new Date(s.end_time).getTime() && overlapEndMs > new Date(s.start_time).getTime());
 
                 if (overlappingShift) {
                     const confirmed = window.confirm(

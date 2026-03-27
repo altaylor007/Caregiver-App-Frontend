@@ -43,15 +43,18 @@ serve(async (req) => {
         if (!userId) throw new Error('userId is required');
 
         // Prepare auth update payload
-        const authUpdatePayload: any = { password };
+        const authUpdatePayload: any = {};
+        if (password !== undefined && password !== null) authUpdatePayload.password = password;
         if (email) authUpdatePayload.email = email;
         if (phone) authUpdatePayload.phone = phone;
 
         // 1. Update the user email, phone, password in auth.users
-        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdatePayload);
+        if (Object.keys(authUpdatePayload).length > 0) {
+            const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdatePayload);
 
-        if (authError) {
-            throw authError;
+            if (authError) {
+                throw authError;
+            }
         }
 
         // 2. Update their email and phone in public.users, and set requires_password_change

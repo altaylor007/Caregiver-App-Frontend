@@ -1,4 +1,4 @@
-import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, toZonedTime, getTimezoneOffset } from 'date-fns-tz';
 
 export const TIMEZONE = 'America/Chicago';
 
@@ -26,12 +26,17 @@ export const createShiftIso = (dateStr, timeStr) => {
     if (!dateStr || !timeStr) return '';
     try {
         const timeComponent = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
-        const localString = `${dateStr}T${timeComponent}`;
+        // Treat input explicitly as UTC to bypass browser local timezone
+        const utcLiteral = `${dateStr}T${timeComponent}Z`;
+        const nominalUtcDate = new Date(utcLiteral);
 
-        // fromZonedTime parses the local time in America/Chicago and returns a global UTC Date object
-        const utcDate = fromZonedTime(localString, TIMEZONE);
-        if (isNaN(utcDate.getTime())) return '';
-        return utcDate.toISOString();
+        // Calculate offset (in ms) of America/Chicago relative to UTC
+        const offsetMs = getTimezoneOffset(TIMEZONE, nominalUtcDate);
+
+        // Output UTC = Nominal UTC - Offset
+        const actualUtcDate = new Date(nominalUtcDate.getTime() - offsetMs);
+        if (isNaN(actualUtcDate.getTime())) return '';
+        return actualUtcDate.toISOString();
     } catch (e) {
         return '';
     }
