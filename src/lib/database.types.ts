@@ -602,7 +602,6 @@ export type Database = {
           payroll_enabled: boolean
           payroll_report_contact: boolean | null
           phone: string | null
-          phone_number: string | null
           role: string
           sms_enabled: boolean | null
           status: string | null
@@ -620,7 +619,6 @@ export type Database = {
           payroll_enabled?: boolean
           payroll_report_contact?: boolean | null
           phone?: string | null
-          phone_number?: string | null
           role?: string
           sms_enabled?: boolean | null
           status?: string | null
@@ -638,7 +636,6 @@ export type Database = {
           payroll_enabled?: boolean
           payroll_report_contact?: boolean | null
           phone?: string | null
-          phone_number?: string | null
           role?: string
           sms_enabled?: boolean | null
           status?: string | null

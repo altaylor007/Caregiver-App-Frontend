@@ -51,7 +51,6 @@ const UpdatePasswordPage = () => {
                 const { error: dbError } = await supabase
                     .from('users')
                     .update({
-                        phone_number: formattedPhone,
                         phone: formattedPhone,
                         sms_enabled: true,
                         requires_password_change: false

@@ -96,13 +96,16 @@ const AdminCaregiversPage = () => {
         setSuccessMsg('');
 
         try {
+            // Refresh the session to ensure the JWT is valid before calling the edge function
+            await supabase.auth.refreshSession();
+
             // Invoke the edge function using the standard authenticated client
             const { data, error: invokeError } = await supabase.functions.invoke('create-caregiver', {
                 body: { email: targetEmail, firstName: newFirstName.trim(), lastName: newLastName.trim(), password: passwordToUse }
             });
 
-            if (invokeError) throw invokeError;
             if (data?.error) throw new Error(data.error);
+            if (invokeError) throw invokeError;
 
             setSuccessMsg(`Success! Caregiver created.`);
 
@@ -126,8 +129,9 @@ const AdminCaregiversPage = () => {
             fetchCaregivers();
 
         } catch (error) {
-            setErrorMsg("An error occurred. The user might already exist, or check console for details.");
-            console.error(error);
+            const msg = error?.message || JSON.stringify(error);
+            setErrorMsg(`An error occurred while creating the account: ${msg}`);
+            console.error('Full error creating caregiver:', error);
         } finally {
             setIsSubmitting(false);
         }

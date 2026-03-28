@@ -7,7 +7,7 @@ const ProfilePage = () => {
     const { user, profile, signOut } = useAuth();
     const [firstName, setFirstName] = useState(profile?.first_name || '');
     const [lastName, setLastName] = useState(profile?.last_name || '');
-    const [phone, setPhone] = useState(profile?.phone_number || profile?.phone || '');
+    const [phone, setPhone] = useState(profile?.phone || '');
     const [smsEnabled, setSmsEnabled] = useState(profile?.sms_enabled || false);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
@@ -16,7 +16,7 @@ const ProfilePage = () => {
     useEffect(() => {
         if (profile?.first_name) setFirstName(profile.first_name);
         if (profile?.last_name) setLastName(profile.last_name);
-        if (profile?.phone_number || profile?.phone) setPhone(profile.phone_number || profile.phone);
+        if (profile?.phone) setPhone(profile.phone);
         if (profile?.sms_enabled !== undefined) setSmsEnabled(profile.sms_enabled);
         if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
     }, [profile]);
@@ -28,7 +28,6 @@ const ProfilePage = () => {
             first_name: firstName.trim() || null,
             last_name: lastName.trim() || null,
             full_name: fullName || null,
-            phone_number: phone,
             sms_enabled: smsEnabled,
             phone: phone
         }).eq('id', user.id);

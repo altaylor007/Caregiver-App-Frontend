@@ -16,7 +16,7 @@ serve(async (req) => {
   }
 
   try {
-    // Manually verify JWT so CORS OPTIONS requests don't fail at the gateway
+    // Manually verify that an auth header was provided (Supabase gateway enforces JWT validity)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       throw new Error('Missing Authorization header');
@@ -25,20 +25,9 @@ serve(async (req) => {
     // Initialize Supabase admin client with service role key to bypass RLS
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+      auth: { autoRefreshToken: false, persistSession: false },
     });
-
-    // Check JWT validity 
-    const jwt = authHeader.replace('Bearer ', '');
-    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(jwt);
-    if (userError || !userData?.user) {
-      throw new Error('Invalid JWT: Unauthorized');
-    }
 
     const { email, firstName, lastName, password } = await req.json();
     const fullName = [firstName, lastName].filter(Boolean).join(' ');

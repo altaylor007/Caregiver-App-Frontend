@@ -19,7 +19,7 @@ serve(async (req) => {
         const { data: user, error: userError } = await supabaseClient
             .from('users')
             .select('id')
-            .eq('phone_number', fromNumber)
+            .eq('phone', fromNumber)
             .single()
 
         if (userError || !user) {
