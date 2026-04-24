@@ -266,7 +266,7 @@ const PayrollReportView = () => {
             return;
         }
 
-        if (!window.confirm(`Are you sure you want to finalize this payroll? This will lock the hours and generate a text report for you to copy.`)) return;
+        if (!window.confirm(`Are you sure you want to finalize this payroll? This will lock the hours and send a text report to Lenke Taylor.`)) return;
         setLoading(true);
         try {
             const { error } = await supabase.from('payroll_reports').insert([{
@@ -281,6 +281,23 @@ const PayrollReportView = () => {
             }).join('\n\n');
             const weDate = format(parseISO(previewData.end_date), 'MM-dd');
             const smsBody = `WE ${weDate}\n\n${smsLines}`;
+
+            // Fetch Lenke Taylor's user record and send SMS
+            const { data: lenkeUser, error: lenkeError } = await supabase
+                .from('users')
+                .select('id, phone')
+                .ilike('full_name', '%Lenke Taylor%')
+                .single();
+
+            if (!lenkeError && lenkeUser && lenkeUser.phone) {
+                let formattedPhone = lenkeUser.phone.replace(/\D/g, '');
+                if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
+                else if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) formattedPhone = `+${formattedPhone}`;
+
+                await supabase.functions.invoke('send-sms', {
+                    body: { to: formattedPhone, messageBody: smsBody }
+                });
+            }
 
             // Show the generated text to the user instead of sending a message
             setShowReportText(smsBody);
@@ -370,7 +387,7 @@ const PayrollReportView = () => {
                                     <button onClick={confirmAndSend} className="btn btn-primary"
                                         style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--success-600)' }}
                                         disabled={loading}>
-                                        <CheckCircle size={16} /> Confirm & Generate Text
+                                        <CheckCircle size={16} /> Confirm & Send to Lenke
                                     </button>
                                 </div>
                             </>
@@ -392,7 +409,7 @@ const PayrollReportView = () => {
                         <Mail size={18} /> Report Generated Successfully
                     </h4>
                     <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                        The payroll report has been finalized and locked. Copy the text below to paste into your preferred messaging app or email.
+                        The payroll report has been finalized and a text message has been sent to Lenke Taylor. A copy of the report is below.
                     </p>
                     <textarea
                         readOnly
