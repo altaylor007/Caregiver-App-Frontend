@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { formatShift } from '../lib/timeUtils';
-import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap, Image as ImageIcon, X } from 'lucide-react';
 
 // Quick-pick emojis shown in the hover picker
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👏', '🙏'];
@@ -34,6 +34,10 @@ const MessagesPage = () => {
 
     const [newMessage, setNewMessage] = useState('');
     const [isSending, setIsSending] = useState(false);
+
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState(null);
+    const fileInputRef = useRef(null);
 
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
@@ -160,9 +164,51 @@ const MessagesPage = () => {
         if (data) setMessages(data);
     };
 
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setSelectedFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setPreviewUrl(reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const clearImage = () => {
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    const uploadImage = async () => {
+        if (!selectedFile) return null;
+        const fileExt = selectedFile.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+        
+        const { error } = await supabase.storage
+            .from('message-attachments')
+            .upload(filePath, selectedFile);
+            
+        if (error) {
+            console.error('Error uploading image', error);
+            return null;
+        }
+        
+        const { data } = supabase.storage
+            .from('message-attachments')
+            .getPublicUrl(filePath);
+            
+        return data.publicUrl;
+    };
+
     const handleCreateTopic = async (e) => {
         e.preventDefault();
-        if (!newTopicTitle.trim() || !newTopicMessage.trim()) return;
+        if (!newTopicTitle.trim() || (!newTopicMessage.trim() && !selectedFile)) return;
 
         setIsCreatingTopic(true);
         const { data: topicData, error: topicError } = await supabase
@@ -177,16 +223,19 @@ const MessagesPage = () => {
             return;
         }
 
+        const imageUrl = await uploadImage();
         const content = newTopicMessage.trim();
         const { data: msgData, error: msgError } = await supabase.from('messages').insert([{
             author_id: user.id,
             topic_id: topicData.id,
-            content: content
+            content: content,
+            image_url: imageUrl
         }]).select().single();
 
         if (!msgError && msgData) {
             setNewTopicTitle('');
             setNewTopicMessage('');
+            clearImage();
             setActiveTopic(topicData);
             setView('messages');
             setSearchParams({ topic: topicData.id });
@@ -238,19 +287,21 @@ const MessagesPage = () => {
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
-        if (!newMessage.trim() || !user || !activeTopic) return;
+        if ((!newMessage.trim() && !selectedFile) || !user || !activeTopic) return;
 
         setIsSending(true);
+        const imageUrl = await uploadImage();
         const content = newMessage.trim();
 
         const { data: insertedMsg, error } = await supabase
             .from('messages')
-            .insert([{ author_id: user.id, topic_id: activeTopic.id, content }])
+            .insert([{ author_id: user.id, topic_id: activeTopic.id, content, image_url: imageUrl }])
             .select()
             .single();
 
         if (!error && insertedMsg) {
             setNewMessage('');
+            clearImage();
 
             // Bump read receipt since they are active
             supabase.from('users').update({ last_read_messages_at: new Date().toISOString() }).eq('id', user.id).then();
@@ -376,8 +427,17 @@ const MessagesPage = () => {
                                     ref={view === 'topics' ? inputRef : null}
                                     className="form-input" placeholder="First message... (Use @Name or @all to tag)" rows="2"
                                     value={newTopicMessage} onChange={(e) => handleInputMentions(e, true)}
-                                    required style={{ resize: 'vertical' }}
+                                    required={!selectedFile} style={{ resize: 'vertical' }}
                                 />
+
+                                {previewUrl && view === 'topics' && (
+                                    <div style={{ position: 'relative', width: 'fit-content' }}>
+                                        <img src={previewUrl} alt="Preview" style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: 'var(--radius-md)', border: '1px solid var(--neutral-200)' }} />
+                                        <button type="button" onClick={clearImage} style={{ position: 'absolute', top: '-8px', right: '-8px', background: 'var(--danger-500)', color: 'white', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                )}
 
                                 {/* Mentions Dropdown inside of new topic form */}
                                 {showMentions && view === 'topics' && (
@@ -398,7 +458,13 @@ const MessagesPage = () => {
                                         ))}
                                     </div>
                                 )}
-                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} style={{ display: 'none' }} id="topic-image-upload" />
+                                        <label htmlFor="topic-image-upload" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.75rem', cursor: 'pointer', border: 'none', color: 'var(--neutral-600)', background: 'white' }}>
+                                            <ImageIcon size={18} /> Attach Image
+                                        </label>
+                                    </div>
                                     <button type="submit" disabled={isCreatingTopic} className="btn btn-primary" style={{ display: 'flex', gap: '0.25rem' }}>
                                         <Plus size={16} /> Create Topic
                                     </button>
@@ -514,6 +580,11 @@ const MessagesPage = () => {
                                                             lineHeight: '1.4'
                                                         }}
                                                     >
+                                                        {msg.image_url && (
+                                                            <div style={{ marginBottom: msg.content ? '0.5rem' : '0' }}>
+                                                                <img src={msg.image_url} alt="Attached image" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px', cursor: 'pointer' }} onClick={() => window.open(msg.image_url, '_blank')} />
+                                                            </div>
+                                                        )}
                                                         {msg.content}
                                                     </div>
 
@@ -650,9 +721,23 @@ const MessagesPage = () => {
                             </div>
                         )}
 
+                        {previewUrl && view === 'messages' && (
+                            <div style={{ padding: '0.75rem 1rem 0 1rem', backgroundColor: 'var(--neutral-50)' }}>
+                                <div style={{ position: 'relative', width: 'fit-content' }}>
+                                    <img src={previewUrl} alt="Preview" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: 'var(--radius-md)', border: '1px solid var(--neutral-200)' }} />
+                                    <button type="button" onClick={clearImage} style={{ position: 'absolute', top: '-8px', right: '-8px', background: 'var(--danger-500)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                         {/* Input Box */}
                         <div style={{ padding: '0.75rem', borderTop: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
-                            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem' }}>
+                            <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <button type="button" onClick={() => fileInputRef.current?.click()} className="btn btn-outline" style={{ padding: '0.6rem', border: '1px solid var(--neutral-300)', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-md)' }} title="Attach Image">
+                                    <ImageIcon size={18} color="var(--neutral-600)" />
+                                </button>
+                                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} style={{ display: 'none' }} />
                                 <input
                                     ref={inputRef} type="text" className="form-input"
                                     placeholder="Type a message... (Use @Name to tag)"
@@ -660,7 +745,7 @@ const MessagesPage = () => {
                                     value={newMessage} onChange={handleInputMentions}
                                     disabled={isSending} autoComplete="off"
                                 />
-                                <button type="submit" disabled={isSending || !newMessage.trim()} className="btn btn-primary">
+                                <button type="submit" disabled={isSending || (!newMessage.trim() && !selectedFile)} className="btn btn-primary" style={{ padding: '0.6rem 1.5rem' }}>
                                     {isSending ? '...' : 'Send'}
                                 </button>
                             </form>
