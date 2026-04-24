@@ -55,7 +55,9 @@ const HoursView = () => {
                 try {
                     const start = parseISO(shift.start_time);
                     const end = parseISO(shift.end_time);
-                    totalHours += (end - start) / (1000 * 60 * 60);
+                    let duration = (end - start) / (1000 * 60 * 60);
+                    if (duration < 0) duration += 24;
+                    totalHours += duration;
                 } catch (_) { }
             });
             return {
@@ -214,7 +216,11 @@ const PayrollReportView = () => {
                 const userShifts = (shifts || []).filter(s => s.assigned_to === u.id);
                 let totalHours = 0;
                 userShifts.forEach(shift => {
-                    try { totalHours += (parseISO(shift.end_time) - parseISO(shift.start_time)) / (1000 * 60 * 60); } catch (_) { }
+                    try { 
+                        let duration = (parseISO(shift.end_time) - parseISO(shift.start_time)) / (1000 * 60 * 60); 
+                        if (duration < 0) duration += 24;
+                        totalHours += duration;
+                    } catch (_) { }
                 });
                 return { caregiver_id: u.id, full_name: u.full_name || 'Unnamed', total_hours: Number(totalHours.toFixed(2)) };
             }).filter(r => r.total_hours > 0);
