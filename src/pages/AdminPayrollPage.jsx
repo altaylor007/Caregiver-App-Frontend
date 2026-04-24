@@ -289,14 +289,20 @@ const PayrollReportView = () => {
                 .ilike('full_name', '%Lenke Taylor%')
                 .single();
 
-            if (!lenkeError && lenkeUser && lenkeUser.phone) {
+            if (lenkeError || !lenkeUser || !lenkeUser.phone) {
+                alert("Report saved, but could not retrieve Lenke Taylor's phone number to send the SMS.");
+            } else {
                 let formattedPhone = lenkeUser.phone.replace(/\D/g, '');
                 if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
                 else if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) formattedPhone = `+${formattedPhone}`;
 
-                await supabase.functions.invoke('send-sms', {
+                const { data: smsData, error: smsError } = await supabase.functions.invoke('send-sms', {
                     body: { to: formattedPhone, messageBody: smsBody }
                 });
+
+                if (smsError || smsData?.error) {
+                    alert("Report saved, but failed to send SMS: " + (smsError?.message || smsData?.error));
+                }
             }
 
             // Show the generated text to the user instead of sending a message
