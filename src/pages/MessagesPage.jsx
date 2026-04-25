@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { formatShift } from '../lib/timeUtils';
-import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap, Image as ImageIcon, X } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap, Image as ImageIcon, X, Camera } from 'lucide-react';
 
 // Quick-pick emojis shown in the hover picker
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👏', '🙏'];
@@ -38,6 +38,7 @@ const MessagesPage = () => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(null);
     const fileInputRef = useRef(null);
+    const cameraInputRef = useRef(null);
 
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
@@ -181,6 +182,9 @@ const MessagesPage = () => {
         setPreviewUrl(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
+        }
+        if (cameraInputRef.current) {
+            cameraInputRef.current.value = '';
         }
     };
 
@@ -459,11 +463,19 @@ const MessagesPage = () => {
                                     </div>
                                 )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div>
-                                        <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} style={{ display: 'none' }} id="topic-image-upload" />
-                                        <label htmlFor="topic-image-upload" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.75rem', cursor: 'pointer', border: 'none', color: 'var(--neutral-600)', background: 'white' }}>
-                                            <ImageIcon size={18} /> Attach Image
-                                        </label>
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <div>
+                                            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} style={{ display: 'none' }} id="topic-image-upload" />
+                                            <label htmlFor="topic-image-upload" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.75rem', cursor: 'pointer', border: 'none', color: 'var(--neutral-600)', background: 'white' }}>
+                                                <ImageIcon size={18} /> Attach Image
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handleImageChange} style={{ display: 'none' }} id="topic-camera-upload" />
+                                            <label htmlFor="topic-camera-upload" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.4rem 0.75rem', cursor: 'pointer', border: 'none', color: 'var(--neutral-600)', background: 'white' }}>
+                                                <Camera size={18} /> Take Photo
+                                            </label>
+                                        </div>
                                     </div>
                                     <button type="submit" disabled={isCreatingTopic} className="btn btn-primary" style={{ display: 'flex', gap: '0.25rem' }}>
                                         <Plus size={16} /> Create Topic
@@ -737,7 +749,11 @@ const MessagesPage = () => {
                                 <button type="button" onClick={() => fileInputRef.current?.click()} className="btn btn-outline" style={{ padding: '0.6rem', border: '1px solid var(--neutral-300)', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-md)' }} title="Attach Image">
                                     <ImageIcon size={18} color="var(--neutral-600)" />
                                 </button>
+                                <button type="button" onClick={() => cameraInputRef.current?.click()} className="btn btn-outline" style={{ padding: '0.6rem', border: '1px solid var(--neutral-300)', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-md)' }} title="Take Photo">
+                                    <Camera size={18} color="var(--neutral-600)" />
+                                </button>
                                 <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} style={{ display: 'none' }} />
+                                <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handleImageChange} style={{ display: 'none' }} />
                                 <input
                                     ref={inputRef} type="text" className="form-input"
                                     placeholder="Type a message... (Use @Name to tag)"
