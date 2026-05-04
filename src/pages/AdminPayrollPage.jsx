@@ -202,8 +202,8 @@ const PayrollReportView = () => {
             const startDateStr = format(startDate, 'yyyy-MM-dd');
 
             const { data: users, error: uError } = await supabase
-                .from('users').select('id, full_name')
-                .eq('is_caregiver', true).eq('status', 'active').eq('payroll_enabled', true);
+                .from('users').select('id, full_name, payroll_enabled')
+                .eq('is_caregiver', true).eq('status', 'active');
             if (uError) throw uError;
 
             const { data: shifts, error: sError } = await supabase
@@ -222,7 +222,7 @@ const PayrollReportView = () => {
                         totalHours += duration;
                     } catch (_) { }
                 });
-                return { caregiver_id: u.id, full_name: u.full_name || 'Unnamed', total_hours: Number(totalHours.toFixed(2)) };
+                return { caregiver_id: u.id, full_name: u.full_name || 'Unnamed', total_hours: Number(totalHours.toFixed(2)), payroll_enabled: u.payroll_enabled };
             }).filter(r => r.total_hours > 0);
 
             setPreviewData({ start_date: startDateStr, end_date: endDateStr, rows: reportRows });
@@ -275,38 +275,88 @@ const PayrollReportView = () => {
             }]);
             if (error) throw error;
 
-            const smsLines = previewData.rows.map(r => {
-                const firstName = r.full_name.split(' ')[0];
-                return `${firstName}\nHours ${r.total_hours}`;
-            }).join('\n\n');
-            const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-            const smsBody = `WE ${weDate}\n\n${smsLines}`;
+            const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
+            const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
 
-            // Fetch Lenke Taylor's user record and send SMS
+            const weDate = format(parseISO(previewData.end_date), 'MM-dd');
+            let smsBodyEnabled = '';
+            let smsBodyDisabled = '';
+            
+            if (enabledRows.length > 0) {
+                const lines = enabledRows.map(r => {
+                    const firstName = r.full_name.split(' ')[0];
+                    return `${firstName}\n${r.total_hours} hours`;
+                }).join('\n\n');
+                smsBodyEnabled = `WE ${weDate}\n\n${lines}`;
+            }
+
+            if (disabledRows.length > 0) {
+                const lines = disabledRows.map(r => {
+                    const firstName = r.full_name.split(' ')[0];
+                    const amount = (r.total_hours * 30).toFixed(0);
+                    return `${firstName}\n${r.total_hours} hours\n$${amount}`;
+                }).join('\n\n');
+                smsBodyDisabled = `WE ${weDate}\n\n${lines}`;
+            }
+
+            // Fetch Lenke Taylor's user record
             const { data: lenkeUser, error: lenkeError } = await supabase
                 .from('users')
                 .select('id, phone')
                 .ilike('full_name', '%Lenke Taylor%')
                 .single();
 
-            if (lenkeError || !lenkeUser || !lenkeUser.phone) {
-                alert("Report saved, but could not retrieve Lenke Taylor's phone number to send the SMS.");
-            } else {
-                let formattedPhone = lenkeUser.phone.replace(/\D/g, '');
-                if (formattedPhone.length === 10) formattedPhone = `+1${formattedPhone}`;
-                else if (formattedPhone.length === 11 && formattedPhone.startsWith('1')) formattedPhone = `+${formattedPhone}`;
+            // Fetch Jed's user record
+            const { data: jedUser, error: jedError } = await supabase
+                .from('users')
+                .select('id, phone')
+                .ilike('full_name', '%Jed%')
+                .limit(1)
+                .single();
 
+            const formatPhone = (phone) => {
+                if (!phone) return null;
+                let f = phone.replace(/\D/g, '');
+                if (f.length === 10) return `+1${f}`;
+                if (f.length === 11 && f.startsWith('1')) return `+${f}`;
+                return null;
+            };
+
+            const lenkePhone = lenkeUser ? formatPhone(lenkeUser.phone) : null;
+            const jedPhone = jedUser ? formatPhone(jedUser.phone) : null;
+
+            if (!lenkePhone) {
+                alert("Could not retrieve Lenke Taylor's phone number.");
+            }
+            if (disabledRows.length > 0 && !jedPhone) {
+                alert("Could not retrieve Jed's phone number to send the independent caregivers report.");
+            }
+
+            const sendSms = async (to, body) => {
+                if (!to) return;
                 const { data: smsData, error: smsError } = await supabase.functions.invoke('send-sms', {
-                    body: { to: formattedPhone, messageBody: smsBody }
+                    body: { to, messageBody: body }
                 });
-
                 if (smsError || smsData?.error) {
-                    alert("Report saved, but failed to send SMS: " + (smsError?.message || smsData?.error));
+                    alert(`Failed to send SMS to ${to}: ` + (smsError?.message || smsData?.error));
                 }
+            };
+
+            if (smsBodyEnabled && lenkePhone) {
+                await sendSms(lenkePhone, smsBodyEnabled);
+            }
+
+            if (smsBodyDisabled) {
+                if (lenkePhone) await sendSms(lenkePhone, smsBodyDisabled);
+                if (jedPhone) await sendSms(jedPhone, smsBodyDisabled);
             }
 
             // Show the generated text to the user instead of sending a message
-            setShowReportText(smsBody);
+            let combinedReport = '';
+            if (smsBodyEnabled) combinedReport += "--- SENT TO LENKE ---\n" + smsBodyEnabled + "\n\n";
+            if (smsBodyDisabled) combinedReport += "--- SENT TO LENKE & JED ---\n" + smsBodyDisabled;
+            
+            setShowReportText(combinedReport.trim());
 
             setPreviewData(null);
             fetchHistory();
@@ -331,7 +381,7 @@ const PayrollReportView = () => {
         <div style={{ paddingBottom: '2rem' }}>
             <div className="card" style={{ borderTop: '4px solid var(--primary-500)', marginBottom: '2rem' }}>
                 <h3 style={{ marginBottom: '1rem' }}>Generate New Report</h3>
-                <p className="text-sm text-neutral-muted" style={{ marginBottom: '1rem' }}>Only caregivers with payroll reporting enabled are included.</p>
+                <p className="text-sm text-neutral-muted" style={{ marginBottom: '1rem' }}>Includes all active caregivers with hours. Messages sent will depend on their payroll-enabled status.</p>
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                     <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '200px' }}>
                         <label className="form-label text-sm">Week Ending (Friday)</label>
@@ -359,7 +409,7 @@ const PayrollReportView = () => {
                         </div>
 
                         {previewData.rows.length === 0 ? (
-                            <p className="text-neutral-muted text-sm text-center" style={{ padding: '1rem' }}>No shifts found for payroll-enabled caregivers in this period.</p>
+                            <p className="text-neutral-muted text-sm text-center" style={{ padding: '1rem' }}>No shifts found for caregivers in this period.</p>
                         ) : (
                             <>
                                 <div style={{ backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--neutral-200)' }}>
