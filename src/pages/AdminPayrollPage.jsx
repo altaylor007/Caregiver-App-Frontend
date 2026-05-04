@@ -439,11 +439,47 @@ const PayrollReportView = () => {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {/* Live SMS Preview */}
+                                <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: 'var(--neutral-100)', borderRadius: 'var(--radius-md)' }}>
+                                    <h5 style={{ marginBottom: '1rem', color: 'var(--neutral-700)', fontSize: '0.9rem' }}>Live Message Preview</h5>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', marginBottom: '0.5rem' }}>
+                                                TO LENKE (Payroll Enabled)
+                                            </div>
+                                            <pre style={{ fontSize: '0.8rem', backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid var(--neutral-200)', whiteSpace: 'pre-wrap', minHeight: '100px', margin: 0 }}>
+                                                {(() => {
+                                                    const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
+                                                    if (enabledRows.length === 0) return 'No caregivers in this group.';
+                                                    const weDate = format(parseISO(previewData.end_date), 'MM-dd');
+                                                    const lines = enabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.total_hours} hours`).join('\n\n');
+                                                    return `WE ${weDate}\n\n${lines}`;
+                                                })()}
+                                            </pre>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', marginBottom: '0.5rem' }}>
+                                                TO LENKE & JED (Independent)
+                                            </div>
+                                            <pre style={{ fontSize: '0.8rem', backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid var(--neutral-200)', whiteSpace: 'pre-wrap', minHeight: '100px', margin: 0 }}>
+                                                {(() => {
+                                                    const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
+                                                    if (disabledRows.length === 0) return 'No caregivers in this group.';
+                                                    const weDate = format(parseISO(previewData.end_date), 'MM-dd');
+                                                    const lines = disabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.total_hours} hours\n$${(r.total_hours * 30).toFixed(0)}`).join('\n\n');
+                                                    return `WE ${weDate}\n\n${lines}`;
+                                                })()}
+                                            </pre>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
                                     <button onClick={confirmAndSend} className="btn btn-primary"
                                         style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--success-600)' }}
                                         disabled={loading}>
-                                        <CheckCircle size={16} /> Confirm & Send to Lenke
+                                        <CheckCircle size={16} /> Confirm & Send to Lenke & Jed
                                     </button>
                                 </div>
                             </>
