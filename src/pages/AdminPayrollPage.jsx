@@ -173,7 +173,6 @@ const PayrollReportView = () => {
     const [weekEnd, setWeekEnd] = useState(new Date());
     const [previewData, setPreviewData] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [showReportText, setShowReportText] = useState(null);
 
     const fetchHistory = async () => {
         setLoading(true);
@@ -351,12 +350,7 @@ const PayrollReportView = () => {
                 if (jedPhone) await sendSms(jedPhone, smsBodyDisabled);
             }
 
-            // Show the generated text to the user instead of sending a message
-            let combinedReport = '';
-            if (smsBodyEnabled) combinedReport += "--- SENT TO LENKE ---\n" + smsBodyEnabled + "\n\n";
-            if (smsBodyDisabled) combinedReport += "--- SENT TO LENKE & JED ---\n" + smsBodyDisabled;
-            
-            setShowReportText(combinedReport.trim());
+            alert('Payroll report has been finalized and text messages have been sent.');
 
             setPreviewData(null);
             fetchHistory();
@@ -364,17 +358,6 @@ const PayrollReportView = () => {
             alert('Error saving report: ' + err.message);
         }
         setLoading(false);
-    };
-
-    const handleCopyToClipboard = async () => {
-        if (!showReportText) return;
-        try {
-            await navigator.clipboard.writeText(showReportText);
-            alert('Report copied to clipboard! You can now paste it into your SMS or email app.');
-            setShowReportText(null);
-        } catch (err) {
-            alert('Failed to copy to clipboard. You can select the text and copy it manually.');
-        }
     };
 
     return (
@@ -487,49 +470,6 @@ const PayrollReportView = () => {
                     </div>
                 )}
             </div>
-
-            {/* View/Copy Report Dialog */}
-            {showReportText && (
-                <div style={{
-                    marginBottom: '2rem',
-                    padding: '1.5rem',
-                    backgroundColor: 'var(--primary-50)',
-                    border: '1px solid var(--primary-200)',
-                    borderRadius: 'var(--radius-lg)'
-                }}>
-                    <h4 style={{ color: 'var(--primary-800)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Mail size={18} /> Report Generated Successfully
-                    </h4>
-                    <p className="text-sm text-neutral-600" style={{ marginBottom: '1rem' }}>
-                        The payroll report has been finalized and a text message has been sent to Lenke Taylor. A copy of the report is below.
-                    </p>
-                    <textarea
-                        readOnly
-                        value={showReportText}
-                        style={{
-                            width: '100%',
-                            minHeight: '200px',
-                            padding: '1rem',
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--neutral-300)',
-                            fontFamily: 'monospace',
-                            fontSize: '0.875rem',
-                            resize: 'vertical',
-                            marginBottom: '1rem',
-                            backgroundColor: 'white'
-                        }}
-                    />
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                        <button onClick={handleCopyToClipboard} className="btn btn-primary" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            Copy to Clipboard
-                        </button>
-                        <button onClick={() => setShowReportText(null)} className="btn btn-outline" style={{ color: 'var(--neutral-500)' }}>
-                            Close
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* History */}
             <div>
                 <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Previous Reports</h3>
