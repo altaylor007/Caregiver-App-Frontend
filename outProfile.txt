@@ -1,0 +1,20 @@
+[dotenv@17.3.1] injecting env (3) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+{
+  id: '394f66ff-2a70-4a3e-9029-4d203e99e103',
+  email: 'lenke.taylor@gmail.com',
+  role: 'admin',
+  full_name: 'Lenke Taylor',
+  created_at: '2026-02-28T12:07:08.271492+00:00',
+  phone: '+14125123099',
+  acknowledged_responsibilities: false,
+  status: 'active',
+  payroll_enabled: false,
+  avatar_url: null,
+  sms_enabled: true,
+  last_read_messages_at: '2026-04-24T13:09:12.629+00:00',
+  payroll_report_contact: true,
+  requires_password_change: false,
+  first_name: 'Lenke',
+  last_name: 'Taylor',
+  is_caregiver: false
+}

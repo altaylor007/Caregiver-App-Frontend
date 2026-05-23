@@ -1,0 +1,4 @@
+[dotenv@17.3.1] injecting env (3) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+Invoking edge function...
+Data: { success: true, sid: 'SM63f04d371b8300e64035545ceda31c47' }
+Error: null

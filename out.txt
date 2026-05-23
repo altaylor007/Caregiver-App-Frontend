@@ -1,0 +1,7 @@
+[dotenv@17.3.1] injecting env (3) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+User: {
+  id: '394f66ff-2a70-4a3e-9029-4d203e99e103',
+  full_name: 'Lenke Taylor',
+  phone: '+14125123099'
+} null
+Logs: [] null

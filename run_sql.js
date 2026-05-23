@@ -1,20 +1,32 @@
 import { createClient } from '@supabase/supabase-js';
-import fs from 'fs';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 dotenv.config();
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
-async function run() {
-    const sql = fs.readFileSync('./supabase/manager_rls_policies.sql', 'utf8');
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+});
 
-    // Supabase JS client doesn't have a direct raw SQL execution method
-    // unless there is a custom RPC function like 'exec_sql'.
-    // We will list the commands here so the user can paste them into the SQL editor
-    console.log("We need to run this SQL in the Supabase SQL Editor:");
-    console.log(sql);
+async function queryUsers() {
+    console.log('Fetching all users...');
+    const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('id, email, full_name, role, is_caregiver, status')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching users:', error);
+        return;
+    }
+
+    console.log(`Found ${data.length} users in public.users:`);
+    console.table(data);
+
+    const nonCaregivers = data.filter(u => u.is_caregiver !== true);
+    console.log(`\nFound ${nonCaregivers.length} users with is_caregiver = false/null (these are hidden from the Caregiver table):`);
+    console.table(nonCaregivers);
 }
 
-run();
+queryUsers().catch(console.error);
