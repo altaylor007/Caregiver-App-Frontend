@@ -168,6 +168,12 @@ const MessagesPage = () => {
     const handleImageChange = (e) => {
         const file = e.target.files[0];
         if (file) {
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('This file type cannot be displayed in the app. Please use a JPEG, PNG, WebP, or GIF image.\n\niPhone users: when sharing a photo, choose "Most Compatible" format.\n\nAndroid/Samsung users: open your Camera app settings and change the picture format from HEIF to JPEG.');
+                e.target.value = '';
+                return;
+            }
             setSelectedFile(file);
             const reader = new FileReader();
             reader.onloadend = () => {
