@@ -9,6 +9,7 @@ const ProfilePage = () => {
     const [lastName, setLastName] = useState(profile?.last_name || '');
     const [phone, setPhone] = useState(profile?.phone || '');
     const [smsEnabled, setSmsEnabled] = useState(profile?.sms_enabled || false);
+    const [smsOnlyMentions, setSmsOnlyMentions] = useState(profile?.sms_only_mentions || false);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
@@ -18,6 +19,7 @@ const ProfilePage = () => {
         if (profile?.last_name) setLastName(profile.last_name);
         if (profile?.phone) setPhone(profile.phone);
         if (profile?.sms_enabled !== undefined) setSmsEnabled(profile.sms_enabled);
+        if (profile?.sms_only_mentions !== undefined) setSmsOnlyMentions(profile.sms_only_mentions);
         if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
     }, [profile]);
 
@@ -29,6 +31,7 @@ const ProfilePage = () => {
             last_name: lastName.trim() || null,
             full_name: fullName || null,
             sms_enabled: smsEnabled,
+            sms_only_mentions: smsOnlyMentions,
             phone: phone
         }).eq('id', user.id);
 
@@ -177,7 +180,10 @@ const ProfilePage = () => {
                         <input
                             type="checkbox"
                             checked={smsEnabled}
-                            onChange={(e) => setSmsEnabled(e.target.checked)}
+                            onChange={(e) => {
+                                setSmsEnabled(e.target.checked);
+                                if (!e.target.checked) setSmsOnlyMentions(false);
+                            }}
                             style={{ opacity: 0, width: 0, height: 0 }}
                         />
                         <span style={{
@@ -191,6 +197,34 @@ const ProfilePage = () => {
                         </span>
                     </label>
                 </div>
+
+                {smsEnabled && (
+                    <div style={{ marginTop: '0.5rem', marginBottom: '1.25rem', paddingLeft: '1rem', borderLeft: '2px solid var(--primary-200)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <label className="form-label" style={{ marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: 600 }}>SMS Notification Preferences</label>
+                        
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                            <input
+                                type="radio"
+                                name="smsPreference"
+                                checked={!smsOnlyMentions}
+                                onChange={() => setSmsOnlyMentions(false)}
+                                style={{ width: '16px', height: '16px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary-600)' }}
+                            />
+                            <span>All Updates <span className="text-xs text-neutral-muted">(Messages, Documents, Schedules)</span></span>
+                        </label>
+                        
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+                            <input
+                                type="radio"
+                                name="smsPreference"
+                                checked={smsOnlyMentions}
+                                onChange={() => setSmsOnlyMentions(true)}
+                                style={{ width: '16px', height: '16px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary-600)' }}
+                            />
+                            <span>Only Tagged <span className="text-xs text-neutral-muted">(Mentions and Group Tags)</span></span>
+                        </label>
+                    </div>
+                )}
 
                 <div style={{ marginBottom: '1.5rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
                     <p className="text-xs text-neutral-700" style={{ lineHeight: '1.4' }}>

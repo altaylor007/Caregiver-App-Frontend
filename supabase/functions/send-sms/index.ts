@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { supabaseClient } from "../_shared/supabase.ts"
+import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
 const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN')
@@ -15,6 +15,17 @@ serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
+
+    const authHeader = req.headers.get('Authorization')
+    const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        {
+            global: {
+                headers: { Authorization: authHeader || `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}` }
+            }
+        }
+    )
 
     try {
         // Accept either { userId, messageBody } OR { to, messageBody } for direct number sends
@@ -40,7 +51,8 @@ serve(async (req) => {
                 .single()
 
             if (userError || !user) {
-                return new Response(JSON.stringify({ error: "User not found" }), {
+                console.error("User query error:", userError, "for userId:", userId)
+                return new Response(JSON.stringify({ error: userError ? userError.message : "User not found", details: userError, userId }), {
                     status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 })
             }
@@ -83,7 +95,11 @@ serve(async (req) => {
 
         if (!twilioResponse.ok) {
             console.error("Twilio Error:", twilioData)
-            throw new Error(twilioData.message || "Failed to send SMS via Twilio")
+            // Return 200 with an error field so the Supabase client can read the body
+            return new Response(JSON.stringify({ error: twilioData.message || "Twilio failed to send SMS", twilioCode: twilioData.code }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+                status: 200,
+            })
         }
 
         // Log the outbound message
@@ -103,9 +119,10 @@ serve(async (req) => {
 
     } catch (error) {
         console.error("Error in send-sms:", error)
+        // Return 200 with error field so client can read the actual message
         return new Response(JSON.stringify({ error: (error as Error).message }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 500,
+            status: 200,
         })
     }
 })
