@@ -10,6 +10,7 @@ const ProfilePage = () => {
     const [phone, setPhone] = useState(profile?.phone || '');
     const [smsEnabled, setSmsEnabled] = useState(profile?.sms_enabled || false);
     const [smsOnlyMentions, setSmsOnlyMentions] = useState(profile?.sms_only_mentions || false);
+    const [smsShiftReminders, setSmsShiftReminders] = useState(profile?.sms_shift_reminders ?? true);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
@@ -20,6 +21,7 @@ const ProfilePage = () => {
         if (profile?.phone) setPhone(profile.phone);
         if (profile?.sms_enabled !== undefined) setSmsEnabled(profile.sms_enabled);
         if (profile?.sms_only_mentions !== undefined) setSmsOnlyMentions(profile.sms_only_mentions);
+        if (profile?.sms_shift_reminders !== undefined) setSmsShiftReminders(profile.sms_shift_reminders ?? true);
         if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
     }, [profile]);
 
@@ -32,6 +34,7 @@ const ProfilePage = () => {
             full_name: fullName || null,
             sms_enabled: smsEnabled,
             sms_only_mentions: smsOnlyMentions,
+            sms_shift_reminders: smsShiftReminders,
             phone: phone
         }).eq('id', user.id);
 
@@ -222,6 +225,36 @@ const ProfilePage = () => {
                                 style={{ width: '16px', height: '16px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary-600)' }}
                             />
                             <span>Only Tagged <span className="text-xs text-neutral-muted">(Mentions and Group Tags)</span></span>
+                        </label>
+                    </div>
+                )}
+
+                {smsEnabled && (
+                    <div className="form-group" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                            <label className="form-label" style={{ marginBottom: 0 }}>Shift reminders</label>
+                            <p className="text-xs text-neutral-muted">Receive a text the day before your shifts</p>
+                        </div>
+                        <label className="toggle-switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '24px' }}>
+                            <input
+                                type="checkbox"
+                                checked={smsShiftReminders}
+                                onChange={async (e) => {
+                                    const newValue = e.target.checked;
+                                    setSmsShiftReminders(newValue);
+                                    await supabase.from('users').update({ sms_shift_reminders: newValue }).eq('id', profile.id);
+                                }}
+                                style={{ opacity: 0, width: 0, height: 0 }}
+                            />
+                            <span style={{
+                                position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                                backgroundColor: smsShiftReminders ? 'var(--primary-600)' : '#ccc', transition: '.4s', borderRadius: '24px'
+                            }}>
+                                <span style={{
+                                    position: 'absolute', content: '""', height: '18px', width: '18px', left: smsShiftReminders ? '18px' : '3px', bottom: '3px',
+                                    backgroundColor: 'white', transition: '.4s', borderRadius: '50%'
+                                }}></span>
+                            </span>
                         </label>
                     </div>
                 )}
