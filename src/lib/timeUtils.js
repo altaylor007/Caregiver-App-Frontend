@@ -60,9 +60,44 @@ const formatShift = (isoStr, fmt) => {
     }
 };
 
+const getHolidaysForYear = (year) => {
+    const newYears = new Date(year, 0, 1);
+    
+    const memorialDay = new Date(year, 4, 31);
+    memorialDay.setDate(31 - ((memorialDay.getDay() - 1 + 7) % 7));
+    
+    const independenceDay = new Date(year, 6, 4);
+    
+    const laborDay = new Date(year, 8, 1);
+    laborDay.setDate(1 + ((8 - laborDay.getDay()) % 7));
+    
+    const thanksgiving = new Date(year, 10, 1);
+    thanksgiving.setDate(1 + ((11 - thanksgiving.getDay()) % 7) + 21);
+    
+    const christmas = new Date(year, 11, 25);
+
+    const formatDate = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    return [
+        formatDate(newYears),
+        formatDate(memorialDay),
+        formatDate(independenceDay),
+        formatDate(laborDay),
+        formatDate(thanksgiving),
+        formatDate(christmas)
+    ];
+};
+
 export {
     TIMEZONE,
     getTodayInCentral,
     createShiftIso,
     formatShift,
+    getHolidaysForYear,
 };
+

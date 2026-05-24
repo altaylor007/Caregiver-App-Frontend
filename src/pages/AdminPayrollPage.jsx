@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { format, subDays, addDays, parseISO, startOfDay } from 'date-fns';
 import { Calendar, FileText, CheckCircle, Mail, ChevronLeft, ChevronRight, Clock, Users } from 'lucide-react';
+import { getHolidaysForYear } from '../lib/timeUtils';
 
 // ─────────────────────────────────────────────
 // Helper: Get the Saturday that starts the week containing `date`
@@ -48,23 +49,37 @@ const HoursView = () => {
             .lte('date', endStr)
             .not('assigned_to', 'is', null);
 
+        const startYear = new Date(startStr).getFullYear();
+        const endYear = new Date(endStr).getFullYear();
+        const holidaySet = new Set([
+            ...getHolidaysForYear(startYear),
+            ...(endYear !== startYear ? getHolidaysForYear(endYear) : [])
+        ]);
+
         const result = (users || []).map(u => {
             const userShifts = (shifts || []).filter(s => s.assigned_to === u.id);
-            let totalHours = 0;
+            let regularHours = 0;
+            let holidayHours = 0;
             userShifts.forEach(shift => {
                 try {
                     const start = parseISO(shift.start_time);
                     const end = parseISO(shift.end_time);
                     let duration = (end - start) / (1000 * 60 * 60);
                     if (duration < 0) duration += 24;
-                    totalHours += duration;
+                    if (holidaySet.has(shift.date)) {
+                        holidayHours += duration;
+                    } else {
+                        regularHours += duration;
+                    }
                 } catch (_) { }
             });
             return {
                 id: u.id,
                 full_name: u.full_name || 'Unnamed',
                 shifts: userShifts.length,
-                hours: Number(totalHours.toFixed(2))
+                hours: Number((regularHours + holidayHours).toFixed(2)),
+                regular_hours: Number(regularHours.toFixed(2)),
+                holiday_hours: Number(holidayHours.toFixed(2))
             };
         }).sort((a, b) => b.hours - a.hours);
 
@@ -211,17 +226,36 @@ const PayrollReportView = () => {
                 .not('assigned_to', 'is', null);
             if (sError) throw sError;
 
+            const startYear = new Date(startDate).getFullYear();
+            const endYear = new Date(weekEnd).getFullYear();
+            const holidaySet = new Set([
+                ...getHolidaysForYear(startYear),
+                ...(endYear !== startYear ? getHolidaysForYear(endYear) : [])
+            ]);
+
             const reportRows = (users || []).map(u => {
                 const userShifts = (shifts || []).filter(s => s.assigned_to === u.id);
-                let totalHours = 0;
+                let regularHours = 0;
+                let holidayHours = 0;
                 userShifts.forEach(shift => {
                     try { 
                         let duration = (parseISO(shift.end_time) - parseISO(shift.start_time)) / (1000 * 60 * 60); 
                         if (duration < 0) duration += 24;
-                        totalHours += duration;
+                        if (holidaySet.has(shift.date)) {
+                            holidayHours += duration;
+                        } else {
+                            regularHours += duration;
+                        }
                     } catch (_) { }
                 });
-                return { caregiver_id: u.id, full_name: u.full_name || 'Unnamed', total_hours: Number(totalHours.toFixed(2)), payroll_enabled: u.payroll_enabled };
+                return {
+                    caregiver_id: u.id,
+                    full_name: u.full_name || 'Unnamed',
+                    regular_hours: Number(regularHours.toFixed(2)),
+                    holiday_hours: Number(holidayHours.toFixed(2)),
+                    total_hours: Number((regularHours + holidayHours).toFixed(2)),
+                    payroll_enabled: u.payroll_enabled
+                };
             }).filter(r => r.total_hours > 0);
 
             setPreviewData({ start_date: startDateStr, end_date: endDateStr, rows: reportRows });
@@ -284,7 +318,7 @@ const PayrollReportView = () => {
             if (enabledRows.length > 0) {
                 const lines = enabledRows.map(r => {
                     const firstName = r.full_name.split(' ')[0];
-                    return `${firstName}\n${r.total_hours} hours`;
+                    return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`;
                 }).join('\n\n');
                 smsBodyEnabled = `WE ${weDate}\n\n${lines}`;
             }
@@ -292,7 +326,7 @@ const PayrollReportView = () => {
             if (disabledRows.length > 0) {
                 const lines = disabledRows.map(r => {
                     const firstName = r.full_name.split(' ')[0];
-                    const amount = (r.total_hours * 30).toFixed(0);
+                    const amount = ((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0);
                     return `${firstName}\n${r.total_hours} hours\n$${amount}`;
                 }).join('\n\n');
                 smsBodyDisabled = `WE ${weDate}\n\n${lines}`;
@@ -436,7 +470,7 @@ const PayrollReportView = () => {
                                                     const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
                                                     if (enabledRows.length === 0) return 'No caregivers in this group.';
                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                    const lines = enabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.total_hours} hours`).join('\n\n');
+                                                    const lines = enabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`).join('\n\n');
                                                     return `WE ${weDate}\n\n${lines}`;
                                                 })()}
                                             </pre>
@@ -450,7 +484,7 @@ const PayrollReportView = () => {
                                                     const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
                                                     if (disabledRows.length === 0) return 'No caregivers in this group.';
                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                    const lines = disabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.total_hours} hours\n$${(r.total_hours * 30).toFixed(0)}`).join('\n\n');
+                                                    const lines = disabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.total_hours} hours\n$${((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0)}`).join('\n\n');
                                                     return `WE ${weDate}\n\n${lines}`;
                                                 })()}
                                             </pre>
