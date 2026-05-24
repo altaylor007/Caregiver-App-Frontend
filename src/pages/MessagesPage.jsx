@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -17,7 +17,7 @@ const EMOJI_LIBRARY = [
 ];
 
 const MessagesPage = () => {
-    const { user, isAdmin } = useAuth();
+    const { user, isAdmin, profile } = useAuth();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
 
@@ -49,6 +49,16 @@ const MessagesPage = () => {
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
+
+    const unreadTopicIds = useMemo(() => {
+        if (!profile?.last_read_messages_at || !messages.length) return new Set();
+        const cutoff = new Date(profile.last_read_messages_at);
+        return new Set(
+            messages
+                .filter(m => new Date(m.created_at) > cutoff)
+                .map(m => m.topic_id)
+        );
+    }, [messages, profile?.last_read_messages_at]);
 
     useEffect(() => {
         fetchTopics();
@@ -202,11 +212,11 @@ const MessagesPage = () => {
         
         const { error } = await supabase.storage
             .from('message-attachments')
-            .upload(filePath, selectedFile);
+            .upload(filePath, selectedFile, { contentType: selectedFile.type || 'application/octet-stream' });
             
         if (error) {
             console.error('Error uploading image', error);
-            return null;
+            throw new Error(`Image upload failed: ${error.message}`);
         }
         
         const { data } = supabase.storage
@@ -300,7 +310,14 @@ const MessagesPage = () => {
         if ((!newMessage.trim() && !selectedFile) || !user || !activeTopic) return;
 
         setIsSending(true);
-        const imageUrl = await uploadImage();
+        let imageUrl = null;
+        try {
+            imageUrl = await uploadImage();
+        } catch (uploadErr) {
+            alert(uploadErr.message);
+            setIsSending(false);
+            return;
+        }
         const content = newMessage.trim();
 
         const { data: insertedMsg, error } = await supabase
@@ -505,7 +522,12 @@ const MessagesPage = () => {
                                             <MessageSquare size={20} />
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>{topic.title}</h3>
+                                            <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>
+                                                {topic.title}
+                                                {unreadTopicIds.has(topic.id) && (
+                                                    <span className="topic-unread-dot" aria-label="Unread messages" />
+                                                )}
+                                            </h3>
                                             <p className="text-xs text-neutral-muted">Started {formatShift(topic.created_at, 'MMM do, yyyy')}</p>
                                         </div>
                                         {isAdmin && (
