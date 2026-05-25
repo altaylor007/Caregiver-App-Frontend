@@ -13,6 +13,13 @@ const DashboardPage = () => {
     const [openShiftsCount, setOpenShiftsCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
+    // Schedule acknowledgment states
+    const [activeBroadcast, setActiveBroadcast] = useState(null);
+    const [pendingShifts, setPendingShifts] = useState([]);
+    const [hasAcknowledged, setHasAcknowledged] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [actionError, setActionError] = useState('');
+
     useEffect(() => {
         const fetchDashboardData = async () => {
             setLoading(true);
@@ -43,6 +50,53 @@ const DashboardPage = () => {
                     .gte('start_time', today);
 
                 setOpenShiftsCount(count || 0);
+
+                // Fetch schedule broadcast and acknowledgment details
+                if (profile?.id) {
+                    const { data: broadcasts, error: broadcastErr } = await supabase
+                        .from('schedule_broadcasts')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    if (broadcastErr) throw broadcastErr;
+
+                    const latest = broadcasts && broadcasts.length > 0 ? broadcasts[0] : null;
+
+                    if (latest) {
+                        // Check if acknowledged
+                        const { data: acks, error: ackErr } = await supabase
+                            .from('schedule_acknowledgments')
+                            .select('*')
+                            .eq('broadcast_id', latest.id)
+                            .eq('user_id', profile.id)
+                            .limit(1);
+
+                        if (ackErr) throw ackErr;
+
+                        const acknowledged = acks && acks.length > 0;
+                        setHasAcknowledged(acknowledged);
+                        setActiveBroadcast(latest);
+
+                        if (!acknowledged) {
+                            // Fetch user's shifts for the broadcast period
+                            const { data: shiftsInPeriod, error: shiftsErr } = await supabase
+                                .from('shifts')
+                                .select('*')
+                                .eq('assigned_to', profile.id)
+                                .gte('date', latest.period_start)
+                                .lte('date', latest.period_end)
+                                .order('date', { ascending: true });
+
+                            if (shiftsErr) throw shiftsErr;
+                            setPendingShifts(shiftsInPeriod || []);
+                        }
+                    } else {
+                        setActiveBroadcast(null);
+                        setPendingShifts([]);
+                        setHasAcknowledged(true);
+                    }
+                }
             } catch (err) {
                 console.error('Error fetching dashboard data:', err);
             } finally {
@@ -51,11 +105,157 @@ const DashboardPage = () => {
         };
 
         fetchDashboardData();
-    }, [user]);
+    }, [user, profile]);
+
+    const handleAcknowledgeAll = async () => {
+        setActionLoading(true);
+        setActionError('');
+
+        try {
+            const { error } = await supabase
+                .from('schedule_acknowledgments')
+                .insert({
+                    broadcast_id: activeBroadcast.id,
+                    user_id: profile.id,
+                    status: 'acknowledged'
+                });
+
+            if (error) throw error;
+            setHasAcknowledged(true);
+        } catch (err) {
+            console.error("Error acknowledging schedule:", err);
+            setActionError(err.message || "Failed to acknowledge schedule.");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleFlagShift = async (shift) => {
+        setActionLoading(true);
+        setActionError('');
+
+        try {
+            // 1. Insert schedule_acknowledgment row with status 'flagged'
+            const { error: ackError } = await supabase
+                .from('schedule_acknowledgments')
+                .insert({
+                    broadcast_id: activeBroadcast.id,
+                    user_id: profile.id,
+                    status: 'flagged'
+                });
+
+            if (ackError) throw ackError;
+
+            // 2. Check if a pending broadcast shift trade already exists for this shift
+            const { data: existingTrades, error: checkError } = await supabase
+                .from('shift_trades')
+                .select('id')
+                .eq('shift_id', shift.id)
+                .is('proposed_to', null)
+                .eq('status', 'pending');
+
+            if (checkError) throw checkError;
+
+            if (!existingTrades || existingTrades.length === 0) {
+                // Insert shift_trade request
+                const { error: tradeError } = await supabase
+                    .from('shift_trades')
+                    .insert({
+                        shift_id: shift.id,
+                        requested_by: profile.id,
+                        proposed_to: null,
+                        status: 'pending'
+                    });
+
+                if (tradeError) throw tradeError;
+            }
+
+            // 3. Post a message to the public message board
+            const firstName = profile?.first_name || profile?.full_name?.split(' ')[0] || 'Caregiver';
+            const formattedDate = formatShift(shift.start_time, 'EEEE, MMM do');
+            const messageContent = `${firstName} is looking for coverage for their ${shift.title} shift on ${formattedDate}. Tap the Schedule to volunteer.`;
+
+            const { error: messageError } = await supabase
+                .from('messages')
+                .insert({
+                    author_id: profile.id,
+                    content: messageContent
+                });
+
+            if (messageError) throw messageError;
+
+            setHasAcknowledged(true);
+        } catch (err) {
+            console.error("Error flagging shift:", err);
+            setActionError(err.message || "Failed to flag shift.");
+        } finally {
+            setActionLoading(false);
+        }
+    };
 
     return (
         <div>
             <h2 style={{ marginBottom: '1rem' }}>Dashboard</h2>
+
+            {/* Schedule Acknowledgment Prompt Card */}
+            {activeBroadcast && !hasAcknowledged && (
+                <div className="card" style={{ border: '2px solid var(--primary-500)', backgroundColor: 'var(--primary-50)', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <h2 style={{ margin: 0, color: 'var(--primary-900)' }}>{activeBroadcast.title}</h2>
+                    <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--neutral-700)', lineHeight: 1.4 }}>
+                        {activeBroadcast.message}
+                    </p>
+
+                    {actionError && (
+                        <div style={{ padding: '0.75rem', backgroundColor: 'var(--danger-50)', color: 'var(--danger-600)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem' }}>
+                            ⚠️ {actionError}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <h4 style={{ margin: 0, color: 'var(--neutral-800)', fontSize: '0.95rem', fontWeight: 600 }}>Your Shifts for this Period:</h4>
+                        {pendingShifts.length === 0 ? (
+                            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--neutral-500)', fontStyle: 'italic' }}>
+                                No shifts assigned for this period.
+                            </p>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {pendingShifts.map(shift => (
+                                    <div key={shift.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', backgroundColor: 'var(--bg-app)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--neutral-800)' }}>{shift.title}</div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--neutral-600)', marginTop: '0.1rem' }}>
+                                                {formatShift(shift.start_time, 'EEEE, MMM do')}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--neutral-500)' }}>
+                                                {formatShift(shift.start_time, 'h:mm a')} - {formatShift(shift.end_time, 'h:mm a')}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleFlagShift(shift)}
+                                            className="btn btn-secondary text-sm"
+                                            style={{ width: '100%', minHeight: '44px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
+                                            disabled={actionLoading}
+                                        >
+                                            I can't do this shift
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={handleAcknowledgeAll}
+                        className="btn btn-primary"
+                        style={{ width: '100%', minHeight: '44px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold' }}
+                        disabled={actionLoading}
+                    >
+                        {actionLoading ? 'Saving...' : 'All looks good ✓'}
+                    </button>
+                </div>
+            )}
 
             <div className="card">
                 <h3>Welcome Back, {profile?.full_name?.split(' ')[0] || 'Caregiver'}!</h3>

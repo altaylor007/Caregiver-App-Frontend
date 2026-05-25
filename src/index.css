@@ -573,3 +573,14 @@ h3 {
     font-size: 90% !important;
   }
 }
+
+.topic-unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-primary, #e53e3e);
+  margin-left: 6px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, subDays, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, subDays, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, formatDistanceToNow } from 'date-fns';
 import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
 
@@ -20,9 +20,24 @@ const AdminSchedulePage = () => {
     const [caregivers, setCaregivers] = useState([]);
     const [availabilityResponses, setAvailabilityResponses] = useState([]);
     const [shiftTemplates, setShiftTemplates] = useState([]);
+    const [openCoverageRequests, setOpenCoverageRequests] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const [currentDate, setCurrentDate] = useState(getTodayInCentral());
+
+    // Schedule Broadcast State
+    const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+    const [broadcastTitle, setBroadcastTitle] = useState('');
+    const [broadcastMessage, setBroadcastMessage] = useState('');
+    const [broadcastPeriodStart, setBroadcastPeriodStart] = useState('');
+    const [broadcastPeriodEnd, setBroadcastPeriodEnd] = useState('');
+    const [broadcasting, setBroadcasting] = useState(false);
+    const [broadcastError, setBroadcastError] = useState('');
+    const [broadcastStats, setBroadcastStats] = useState(null);
+
+    const [latestBroadcast, setLatestBroadcast] = useState(null);
+    const [broadcastAcks, setBroadcastAcks] = useState([]);
+    const [activeCaregivers, setActiveCaregivers] = useState([]);
 
     // Initialize view mode from URL to persist across reloads
     const [viewMode, setViewModeState] = useState(() => {
@@ -192,11 +207,116 @@ const AdminSchedulePage = () => {
             setLockedRanges(ranges);
         }
 
+        // Fetch open coverage requests for admin visibility
+        const { data: openCoverageData, error: openCoverageError } = await supabase
+            .from('shift_trades')
+            .select('*, shifts(*), requester:users!requested_by(id, full_name, first_name, last_name)')
+            .is('proposed_to', null)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false });
+
+        if (openCoverageData) setOpenCoverageRequests(openCoverageData);
+        if (openCoverageError) console.error("Error fetching open coverage requests:", openCoverageError);
+
         setLoading(false);
+    };
+
+    const fetchAckData = async () => {
+        try {
+            const { data: broadcastData, error: broadcastErr } = await supabase
+                .from('schedule_broadcasts')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (broadcastErr) throw broadcastErr;
+            const latest = broadcastData && broadcastData.length > 0 ? broadcastData[0] : null;
+            setLatestBroadcast(latest);
+
+            if (latest) {
+                const { data: acksData, error: acksErr } = await supabase
+                    .from('schedule_acknowledgments')
+                    .select('*, users(id, first_name, last_name, full_name)')
+                    .eq('broadcast_id', latest.id);
+
+                if (acksErr) throw acksErr;
+                setBroadcastAcks(acksData || []);
+            } else {
+                setBroadcastAcks([]);
+            }
+
+            const { data: activeCGData, error: cgErr } = await supabase
+                .from('users')
+                .select('id, first_name, last_name, full_name')
+                .eq('status', 'active')
+                .or('role.eq.caregiver,is_caregiver.eq.true');
+
+            if (cgErr) throw cgErr;
+            setActiveCaregivers(activeCGData || []);
+        } catch (err) {
+            console.error("Error fetching acknowledgment data:", err);
+        }
+    };
+
+    const openBroadcastModal = () => {
+        setIsBroadcastModalOpen(true);
+        setBroadcastTitle(`${format(currentDate, 'MMMM yyyy')} Schedule Posted`);
+        setBroadcastMessage(`The schedule for ${format(currentDate, 'MMMM yyyy')} has been published. Please review your shifts in the app.`);
+        setBroadcastPeriodStart(format(startOfMonth(currentDate), 'yyyy-MM-dd'));
+        setBroadcastPeriodEnd(format(endOfMonth(currentDate), 'yyyy-MM-dd'));
+        setBroadcastError('');
+        setBroadcastStats(null);
+    };
+
+    const handleSendBroadcast = async (e) => {
+        e.preventDefault();
+        setBroadcasting(true);
+        setBroadcastError('');
+        setBroadcastStats(null);
+
+        try {
+            const { data, error } = await supabase.functions.invoke('send-schedule-broadcast', {
+                body: {
+                    title: broadcastTitle,
+                    message: broadcastMessage,
+                    period_start: broadcastPeriodStart,
+                    period_end: broadcastPeriodEnd
+                }
+            });
+
+            if (error) {
+                console.error("Broadcast invoke error:", error);
+                setBroadcastError(error.message || "Failed to send schedule broadcast.");
+                setBroadcasting(false);
+            } else if (data && data.error) {
+                console.error("Broadcast function error:", data.error);
+                setBroadcastError(data.error);
+                setBroadcasting(false);
+            } else {
+                setBroadcastStats({
+                    notified: data.notified,
+                    sms_sent: data.sms_sent
+                });
+                
+                await fetchAckData();
+                await fetchData();
+
+                setTimeout(() => {
+                    setIsBroadcastModalOpen(false);
+                    setBroadcasting(false);
+                    setBroadcastStats(null);
+                }, 2500);
+            }
+        } catch (err) {
+            console.error("Broadcast network error:", err);
+            setBroadcastError(err.message || "An unexpected network error occurred.");
+            setBroadcasting(false);
+        }
     };
 
     useEffect(() => {
         fetchData();
+        fetchAckData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentDate]);
 
@@ -476,6 +596,26 @@ const AdminSchedulePage = () => {
     const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
     const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
+    // Compute Acknowledgment Groups
+    const acknowledgedList = [];
+    const flaggedList = [];
+    const noResponseList = [];
+
+    if (latestBroadcast) {
+        activeCaregivers.forEach(cg => {
+            const ack = broadcastAcks.find(a => a.user_id === cg.id);
+            if (ack) {
+                if (ack.status === 'acknowledged') {
+                    acknowledgedList.push(cg);
+                } else if (ack.status === 'flagged') {
+                    flaggedList.push(cg);
+                }
+            } else {
+                noResponseList.push(cg);
+            }
+        });
+    }
+
     return (
         <div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -533,6 +673,9 @@ const AdminSchedulePage = () => {
                             <button onClick={() => setIsRequestModalOpen(true)} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
                                 <CalendarIcon size={16} /> Request Availability
                             </button>
+                            <button onClick={openBroadcastModal} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
+                                <Send size={16} /> Notify Caregivers
+                            </button>
                             <button onClick={() => window.print()} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
                                 <Printer size={16} /> Print
                             </button>
@@ -543,6 +686,142 @@ const AdminSchedulePage = () => {
                     </div>
                 )}
             </div>
+
+            {/* Open Coverage Requests Panel */}
+            {openCoverageRequests.length > 0 && (
+                <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ margin: 0, marginBottom: '0.75rem', color: 'var(--warning-800)', fontSize: '1.1rem', fontWeight: 600 }}>Open Coverage Requests</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {openCoverageRequests.map(trade => {
+                            const requesterName = trade.requester
+                                ? `${trade.requester.first_name || ''} ${trade.requester.last_name || ''}`.trim() || trade.requester.full_name
+                                : 'Unknown Caregiver';
+
+                            // Format shift date and time
+                            const shiftDateStr = trade.shifts
+                                ? formatShift(trade.shifts.start_time || createShiftIso(trade.shifts.date, '00:00'), 'eeee, MMMM d, yyyy')
+                                : '';
+                            const shiftTimeStr = trade.shifts
+                                ? `${formatShift(trade.shifts.start_time, 'h:mma')} - ${formatShift(trade.shifts.end_time, 'h:mma')}`.toLowerCase()
+                                : '';
+
+                            // How long ago
+                            let timeAgoStr = '';
+                            if (trade.created_at) {
+                                try {
+                                    timeAgoStr = formatDistanceToNow(new Date(trade.created_at), { addSuffix: true });
+                                } catch (e) {
+                                    console.error(e);
+                                }
+                            }
+
+                            return (
+                                <div key={trade.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--neutral-200)' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--neutral-900)' }}>
+                                            {trade.shifts?.title || 'Shift'} on {shiftDateStr}
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--neutral-600)', marginTop: '0.2rem' }}>
+                                            ⏰ {shiftTimeStr}
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--neutral-500)', marginTop: '0.25rem' }}>
+                                            Requested by: <strong>{requesterName}</strong> {timeAgoStr}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.35rem 0.75rem', backgroundColor: 'var(--warning-100)', color: 'var(--warning-800)', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600 }}>
+                                            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--warning-500)' }}></span>
+                                            Awaiting Volunteer
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* Schedule Acknowledgment Status Panel */}
+            {latestBroadcast && (
+                <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+                        <div>
+                            <h3 style={{ margin: 0, color: 'var(--neutral-900)', fontSize: '1.1rem', fontWeight: 600 }}>
+                                {latestBroadcast.title}
+                            </h3>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--neutral-600)', marginTop: '0.2rem' }}>
+                                📅 Period: {format(parseISO(latestBroadcast.period_start), 'MMM d, yyyy')} to {format(parseISO(latestBroadcast.period_end), 'MMM d, yyyy')}
+                            </div>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--neutral-500)', textAlign: 'right' }}>
+                            Sent: {format(parseISO(latestBroadcast.created_at), 'MMM d, yyyy h:mm a')}
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '1.25rem' }}>
+                        {/* Acknowledged Column */}
+                        <div style={{ backgroundColor: 'var(--success-50)', border: '1px solid var(--success-200)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                            <h4 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--success-800)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem', fontWeight: 600 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--success-500)' }}></span>
+                                Acknowledged ({acknowledgedList.length})
+                            </h4>
+                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                {acknowledgedList.length === 0 ? (
+                                    <li style={{ color: 'var(--success-600)', fontSize: '0.8rem', fontStyle: 'italic' }}>None</li>
+                                ) : (
+                                    acknowledgedList.map(cg => (
+                                        <li key={cg.id} style={{ fontSize: '0.85rem', color: 'var(--success-900)' }}>
+                                            {cg.full_name || `${cg.first_name || ''} ${cg.last_name || ''}`.trim() || 'Caregiver'}
+                                        </li>
+                                    ))
+                                )}
+                            </ul>
+                        </div>
+
+                        {/* Flagged Column */}
+                        <div style={{ backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                            <h4 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--warning-800)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem', fontWeight: 600 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--warning-500)' }}></span>
+                                Flagged a Shift ({flaggedList.length})
+                            </h4>
+                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                {flaggedList.length === 0 ? (
+                                    <li style={{ color: 'var(--warning-600)', fontSize: '0.8rem', fontStyle: 'italic' }}>None</li>
+                                ) : (
+                                    flaggedList.map(cg => (
+                                        <li key={cg.id} style={{ fontSize: '0.85rem', color: 'var(--warning-900)' }}>
+                                            {cg.full_name || `${cg.first_name || ''} ${cg.last_name || ''}`.trim() || 'Caregiver'}
+                                        </li>
+                                    ))
+                                )}
+                            </ul>
+                        </div>
+
+                        {/* No Response Column */}
+                        <div style={{ backgroundColor: 'var(--neutral-100)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                            <h4 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--neutral-800)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem', fontWeight: 600 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--neutral-400)' }}></span>
+                                No Response ({noResponseList.length})
+                            </h4>
+                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                {noResponseList.length === 0 ? (
+                                    <li style={{ color: 'var(--neutral-600)', fontSize: '0.8rem', fontStyle: 'italic' }}>None</li>
+                                ) : (
+                                    noResponseList.map(cg => (
+                                        <li key={cg.id} style={{ fontSize: '0.85rem', color: 'var(--neutral-700)' }}>
+                                            {cg.full_name || `${cg.first_name || ''} ${cg.last_name || ''}`.trim() || 'Caregiver'}
+                                        </li>
+                                    ))
+                                )}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--neutral-700)', borderTop: '1px solid var(--neutral-200)', paddingTop: '0.75rem' }}>
+                        {acknowledgedList.length} acknowledged · {flaggedList.length} flagged · {noResponseList.length} no response
+                    </div>
+                </div>
+            )}
 
             {/* Shift Edit Modal */}
             {
@@ -813,7 +1092,6 @@ const AdminSchedulePage = () => {
                                             {daysInMonth.map((day, dayIdx) => {
                                                 const dayStr = format(day, 'yyyy-MM-dd');
                                                 const avail = availabilityResponses.find(r => r.user_id === cg.id && r.date === dayStr);
-                                                // eslint-disable-next-line no-unused-vars
                                                 const openShiftsOnDay = shifts.filter(s => s.date === dayStr && !s.assigned_to && !s.custom_assigned_name);
                                                 const isToday = isSameDay(day, getTodayInCentral());
 
@@ -831,6 +1109,7 @@ const AdminSchedulePage = () => {
                                                     title += ` | Note: "${avail.notes}"`;
                                                 }
 
+                                                // eslint-disable-next-line no-unused-vars
                                                 const validOpenShifts = openShiftsOnDay.filter(shift => {
                                                     if (!avail || avail.status !== 'available') return false;
                                                     return true;
@@ -1284,6 +1563,105 @@ const AdminSchedulePage = () => {
                                     {bulkSubmitting ? 'Updating...' : 'Apply Assignment'}
                                 </button>
                                 <button type="button" onClick={() => setIsBulkAssignModalOpen(false)} className="btn btn-outline" style={{ flex: 1 }}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Notify Caregivers Modal */}
+            {isBroadcastModalOpen && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', overflowY: 'auto' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '600px', margin: 'auto', maxHeight: 'max-content', border: '2px solid var(--primary-500)', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h3 style={{ margin: 0 }}>Publish & Notify Caregivers</h3>
+                            <button type="button" onClick={() => setIsBroadcastModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', lineHeight: 1, color: 'var(--neutral-500)' }}>&times;</button>
+                        </div>
+
+                        {broadcastError && (
+                            <div style={{ backgroundColor: 'var(--danger-50)', color: 'var(--danger-600)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                                {broadcastError}
+                            </div>
+                        )}
+
+                        {broadcastStats && (
+                            <div style={{ backgroundColor: 'var(--success-50)', color: 'var(--success-600)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                                🟢 Broadcast Sent Successfully!<br />
+                                Notified: {broadcastStats.notified} caregivers in-app.<br />
+                                SMS Sent: {broadcastStats.sms_sent} caregivers.
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSendBroadcast}>
+                            <div className="form-group">
+                                <label className="form-label">Broadcast Title</label>
+                                <input 
+                                    type="text" 
+                                    className="form-input" 
+                                    placeholder="e.g. June Schedule Posted" 
+                                    value={broadcastTitle} 
+                                    onChange={e => setBroadcastTitle(e.target.value)} 
+                                    required 
+                                    disabled={broadcasting || !!broadcastStats}
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Message / Instructions</label>
+                                <textarea 
+                                    className="form-input" 
+                                    rows="4" 
+                                    placeholder="Enter details for caregivers..." 
+                                    value={broadcastMessage} 
+                                    onChange={e => setBroadcastMessage(e.target.value)} 
+                                    required 
+                                    disabled={broadcasting || !!broadcastStats}
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group">
+                                    <label className="form-label">Period Start</label>
+                                    <input 
+                                        type="date" 
+                                        className="form-input" 
+                                        value={broadcastPeriodStart} 
+                                        onChange={e => setBroadcastPeriodStart(e.target.value)} 
+                                        required 
+                                        disabled={broadcasting || !!broadcastStats}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Period End</label>
+                                    <input 
+                                        type="date" 
+                                        className="form-input" 
+                                        value={broadcastPeriodEnd} 
+                                        onChange={e => setBroadcastPeriodEnd(e.target.value)} 
+                                        required 
+                                        disabled={broadcasting || !!broadcastStats}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                                <button 
+                                    type="submit" 
+                                    className="btn btn-primary" 
+                                    style={{ flex: 1 }} 
+                                    disabled={broadcasting || !!broadcastStats}
+                                >
+                                    {broadcasting ? 'Publishing & Sending...' : 'Send to All Caregivers'}
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsBroadcastModalOpen(false)} 
+                                    className="btn btn-outline" 
+                                    style={{ flex: 1 }}
+                                    disabled={broadcasting}
+                                >
                                     Cancel
                                 </button>
                             </div>

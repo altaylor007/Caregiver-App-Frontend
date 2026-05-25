@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, CalendarCheck, Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom';
 
 const SchedulePage = () => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const navigate = useNavigate();
     const [shifts, setShifts] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -21,6 +21,13 @@ const SchedulePage = () => {
     const [shiftToTrade, setShiftToTrade] = useState(null);
     const [selectedCaregiverForTrade, setSelectedCaregiverForTrade] = useState('');
     const [tradeSubmitting, setTradeSubmitting] = useState(false);
+
+    // Coverage requests state
+    const [coverageRequests, setCoverageRequests] = useState([]);
+    const [coverageModalOpen, setCoverageModalOpen] = useState(false);
+    const [shiftForCoverage, setShiftForCoverage] = useState(null);
+    const [coverageNote, setCoverageNote] = useState('');
+    const [coverageSubmitting, setCoverageSubmitting] = useState(false);
 
     const [currentDate, setCurrentDate] = useState(getTodayInCentral());
     const [showOnlyMyShifts, setShowOnlyMyShifts] = useState(false);
@@ -90,6 +97,21 @@ const SchedulePage = () => {
         } else {
             setOutgoingTrades([]);
         }
+
+        // Fetch open coverage requests
+        const { data: coverageData, error: coverageError } = await supabase
+            .from('shift_trades')
+            .select('*, shifts(*), requester:users!requested_by(id, full_name, first_name)')
+            .is('proposed_to', null)
+            .eq('status', 'pending')
+            .neq('requested_by', user?.id);
+
+        if (coverageData) {
+            setCoverageRequests(coverageData);
+        } else {
+            setCoverageRequests([]);
+        }
+        if (coverageError) console.error("Error fetching open coverage requests:", coverageError);
 
         setLoading(false);
     };
@@ -182,6 +204,62 @@ const SchedulePage = () => {
             fetchSchedule();
         } catch (error) {
             alert("Error rejecting trade: " + error.message);
+        }
+    };
+
+    const handleRequestCoverage = (shift) => {
+        setShiftForCoverage(shift);
+        setCoverageNote('');
+        setCoverageModalOpen(true);
+    };
+
+    const submitCoverageRequest = async () => {
+        if (!shiftForCoverage) return;
+        setCoverageSubmitting(true);
+        try {
+            // 1. Insert into public.shift_trades
+            const { error: tradeErr } = await supabase.from('shift_trades').insert({
+                shift_id: shiftForCoverage.id,
+                requested_by: profile?.id || user.id,
+                proposed_to: null,
+                status: 'pending'
+            });
+            if (tradeErr) throw tradeErr;
+
+            // 2. Insert into public.messages
+            const caregiverName = profile?.first_name || profile?.full_name || 'A caregiver';
+            const formattedDate = formatShift(shiftForCoverage.start_time, 'EEEE, MMMM d');
+            let messageContent = `${caregiverName} is looking for coverage for their ${shiftForCoverage.title} shift on ${formattedDate}. Tap the Schedule to volunteer.`;
+            if (coverageNote.trim()) {
+                messageContent += ` Note: ${coverageNote.trim()}`;
+            }
+
+            const { error: msgErr } = await supabase.from('messages').insert({
+                author_id: profile?.id || user.id,
+                content: messageContent
+            });
+            if (msgErr) throw msgErr;
+
+            alert('Coverage request posted successfully!');
+            setCoverageModalOpen(false);
+            fetchSchedule();
+        } catch (error) {
+            alert("Error requesting coverage: " + error.message);
+        } finally {
+            setCoverageSubmitting(false);
+        }
+    };
+
+    const handleClaimCoverage = async (trade) => {
+        if (!window.confirm(`Volunteer to cover the ${trade.shifts?.title} shift on ${formatShift(trade.shifts?.start_time || createShiftIso(trade.shifts?.date, '00:00'), 'MMM do')}?`)) return;
+        try {
+            const { error } = await supabase.rpc('claim_shift_coverage', { trade_id: trade.id });
+            if (error) throw error;
+
+            alert('Shift successfully claimed!');
+            fetchSchedule();
+        } catch (error) {
+            alert("Error claiming shift coverage: " + error.message);
         }
     };
 
@@ -334,7 +412,7 @@ const SchedulePage = () => {
                                     <option key={cg.id} value={cg.id}>{cg.first_name || cg.full_name}</option>
                                 ))}
                             </select>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.5rem' }}>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--neutral-505)', marginTop: '0.5rem' }}>
                                 A notification will be sent to the selected caregiver. If they accept, the shift will be reassigned to them.
                             </p>
                         </div>
@@ -349,6 +427,50 @@ const SchedulePage = () => {
                                 {tradeSubmitting ? 'Sending Request...' : 'Send Trade Request'}
                             </button>
                             <button onClick={() => setTradeModalOpen(false)} className="btn btn-outline" style={{ flex: 1 }}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Request Coverage Modal */}
+            {coverageModalOpen && shiftForCoverage && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '400px', margin: 'auto' }}>
+                        <h3 style={{ marginBottom: '1rem', marginTop: 0 }}>Request Shift Coverage</h3>
+                        <div style={{ marginBottom: '1.5rem', fontSize: '0.875rem' }}>
+                            <div style={{ fontWeight: 600 }}>{shiftForCoverage.title}</div>
+                            <div style={{ color: 'var(--neutral-600)' }}>{formatShift(shiftForCoverage.start_time || createShiftIso(shiftForCoverage.date, '00:00'), 'EEEE, MMMM d, yyyy')}</div>
+                            <div style={{ color: 'var(--neutral-600)' }}>{formatShift(shiftForCoverage.start_time, 'h:mma')} - {formatShift(shiftForCoverage.end_time, 'h:mma')}</div>
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="coverageNote">Optional Note (visible to team):</label>
+                            <textarea
+                                id="coverageNote"
+                                className="form-input"
+                                style={{ width: '100%', minHeight: '80px', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--neutral-300)', fontSize: '0.875rem', fontFamily: 'inherit' }}
+                                value={coverageNote}
+                                onChange={(e) => setCoverageNote(e.target.value)}
+                                placeholder="Explain why you need coverage or add instructions..."
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', flexDirection: 'column' }}>
+                            <button
+                                onClick={submitCoverageRequest}
+                                className="btn btn-primary"
+                                style={{ minHeight: '44px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                disabled={coverageSubmitting}
+                            >
+                                {coverageSubmitting ? 'Posting Request...' : 'Confirm & Request Coverage'}
+                            </button>
+                            <button 
+                                onClick={() => setCoverageModalOpen(false)} 
+                                className="btn btn-outline" 
+                                style={{ minHeight: '44px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >
                                 Cancel
                             </button>
                         </div>
@@ -423,15 +545,32 @@ const SchedulePage = () => {
                                                         {/* Action buttons — only for mine or open */}
                                                         {!printMode && isMine && (() => {
                                                             const pendingTrade = outgoingTrades.find(t => t.shift_id === shift.id);
-                                                            return pendingTrade ? (
-                                                                <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
-                                                                    ⏳ Pending trade with {pendingTrade.proposed_to_name}
-                                                                </div>
-                                                            ) : (
-                                                                <button onClick={(e) => { e.stopPropagation(); handleTradeShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--primary-600)', color: 'white', marginTop: '0.25rem' }}>
-                                                                    Trade Shift
-                                                                </button>
-                                                            );
+                                                            if (pendingTrade) {
+                                                                if (pendingTrade.proposed_to) {
+                                                                    return (
+                                                                        <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
+                                                                            ⏳ Pending trade with {pendingTrade.proposed_to_name}
+                                                                        </div>
+                                                                    );
+                                                                } else {
+                                                                    return (
+                                                                        <button disabled className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', marginTop: '0.25rem', cursor: 'not-allowed', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                            Coverage Requested
+                                                                        </button>
+                                                                    );
+                                                                }
+                                                            } else {
+                                                                return (
+                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                                                        <button onClick={(e) => { e.stopPropagation(); handleTradeShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', minHeight: '44px', width: '100%', backgroundColor: 'var(--primary-600)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.2rem' }}>
+                                                                            Trade Shift
+                                                                        </button>
+                                                                        <button onClick={(e) => { e.stopPropagation(); handleRequestCoverage(shift); }} className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', width: '100%', backgroundColor: 'white', border: '1px solid var(--neutral-300)', color: 'var(--neutral-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.2rem' }}>
+                                                                            Request Coverage
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            }
                                                         })()}
                                                         {!printMode && isOpen && (
                                                             <button onClick={(e) => { e.stopPropagation(); handlePickUpShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--warning-500)', color: 'white', marginTop: '0.25rem' }}>
@@ -454,6 +593,38 @@ const SchedulePage = () => {
                     )}
                 </div>
             </div>
+
+            {/* Coverage Needed Section */}
+            {!printMode && coverageRequests.length > 0 && (
+                <div className="no-print" style={{ marginTop: '2rem', padding: '1rem', backgroundColor: 'var(--primary-50)', border: '1px solid var(--primary-200)', borderRadius: 'var(--radius-md)' }}>
+                    <h3 style={{ margin: 0, marginBottom: '0.75rem', color: 'var(--primary-800)', fontSize: '1.1rem', fontWeight: 600 }}>Coverage Needed</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {coverageRequests.map(trade => {
+                            const requesterName = trade.requester?.first_name || trade.requester?.full_name || 'Unknown Caregiver';
+                            return (
+                                <div key={trade.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'white', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--neutral-200)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--neutral-900)' }}>{trade.shifts?.title}</div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--neutral-600)', marginTop: '0.25rem' }}>
+                                            {formatShift(trade.shifts?.start_time || createShiftIso(trade.shifts?.date, '00:00'), 'EEEE, MMM do')} | {formatShift(trade.shifts?.start_time, 'h:mma').toLowerCase()} - {formatShift(trade.shifts?.end_time, 'h:mma').toLowerCase()}
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--neutral-500)', marginTop: '0.25rem' }}>
+                                            Requested by: <strong>{requesterName}</strong>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleClaimCoverage(trade)} 
+                                        className="btn btn-primary" 
+                                        style={{ minHeight: '44px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 600 }}
+                                    >
+                                        I'll Cover This
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

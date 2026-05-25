@@ -57,19 +57,23 @@ BEGIN
           AND phone IS NOT NULL 
           AND id != NEW.author_id
     LOOP
-        payload := jsonb_build_object(
-            'userId', recipient.id,
-            'messageBody', sms_body
-        );
-
-        SELECT net.http_post(
-            url := project_url || '/functions/v1/send-sms',
-            headers := jsonb_build_object(
-                'Content-Type', 'application/json',
-                'Authorization', 'Bearer ' || service_role_key
-            ),
-            body := payload
-        ) INTO request_id;
+        BEGIN
+            payload := jsonb_build_object(
+                'userId', recipient.id,
+                'messageBody', sms_body
+            );
+            SELECT net.http_post(
+                url := project_url || '/functions/v1/send-sms',
+                headers := jsonb_build_object(
+                    'Content-Type', 'application/json',
+                    'Authorization', 'Bearer ' || service_role_key
+                ),
+                body := payload
+            ) INTO request_id;
+        EXCEPTION WHEN OTHERS THEN
+            -- Log and continue; never let SMS failure abort a message INSERT
+            RAISE WARNING 'notify_caregivers_on_message: SMS failed for user %: %', recipient.id, SQLERRM;
+        END;
     END LOOP;
     
     RETURN NEW;
