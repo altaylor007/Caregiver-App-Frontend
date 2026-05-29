@@ -10,10 +10,13 @@ const CaregiverDirectoryPage = () => {
         const fetchDirectory = async () => {
             setLoading(true);
             // Fetch all active users (we can display both admins and caregivers, or just caregivers)
-            const { data, error } = await supabase
+            let query = supabase
                 .from('users')
                 .select('id, full_name, email, role, phone, avatar_url')
-                .eq('status', 'active')
+                .eq('status', 'active');
+            if (!import.meta.env.DEV) query = query.eq('is_test_account', false);
+
+            const { data, error } = await query
                 .order('full_name', { ascending: true });
 
             if (data && !error) {

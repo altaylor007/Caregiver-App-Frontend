@@ -159,11 +159,14 @@ const AdminSchedulePage = () => {
             .order('start_time', { ascending: true });
 
         // Fetch active caregivers for assignment dropdown
-        const caregiversData = await supabase
+        let caregiversQuery = supabase
             .from('users')
             .select('id, full_name, first_name, last_name')
             .eq('is_caregiver', true)
-            .eq('status', 'active')
+            .eq('status', 'active');
+        if (!import.meta.env.DEV) caregiversQuery = caregiversQuery.eq('is_test_account', false);
+
+        const caregiversData = await caregiversQuery
             .order('first_name', { ascending: true })
             .order('last_name', { ascending: true });
 
@@ -245,11 +248,14 @@ const AdminSchedulePage = () => {
                 setBroadcastAcks([]);
             }
 
-            const { data: activeCGData, error: cgErr } = await supabase
+            let activeCGQuery = supabase
                 .from('users')
                 .select('id, first_name, last_name, full_name')
                 .eq('status', 'active')
                 .or('role.eq.caregiver,is_caregiver.eq.true');
+            if (!import.meta.env.DEV) activeCGQuery = activeCGQuery.eq('is_test_account', false);
+
+            const { data: activeCGData, error: cgErr } = await activeCGQuery;
 
             if (cgErr) throw cgErr;
             setActiveCaregivers(activeCGData || []);

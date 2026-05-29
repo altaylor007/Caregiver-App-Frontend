@@ -57,7 +57,9 @@ const SchedulePage = () => {
         if (data) setShifts(data);
         if (error) console.error("Error fetching shifts:", error);
 
-        const cgRes = await supabase.from('users').select('id, full_name, first_name').eq('is_caregiver', true).eq('status', 'active');
+        let cgQuery = supabase.from('users').select('id, full_name, first_name').eq('is_caregiver', true).eq('status', 'active');
+        if (!import.meta.env.DEV) cgQuery = cgQuery.eq('is_test_account', false);
+        const cgRes = await cgQuery;
         if (cgRes.data) setCaregivers(cgRes.data.filter(c => c.id !== user?.id));
 
         // Fetch incoming pending trades
@@ -69,7 +71,9 @@ const SchedulePage = () => {
 
         if (tradesRes.data && tradesRes.data.length > 0) {
             const requesterIds = [...new Set(tradesRes.data.map(t => t.requested_by))];
-            const { data: requesters } = await supabase.from('users').select('id, full_name, first_name').in('id', requesterIds);
+            let requestersQuery = supabase.from('users').select('id, full_name, first_name').in('id', requesterIds);
+            if (!import.meta.env.DEV) requestersQuery = requestersQuery.eq('is_test_account', false);
+            const { data: requesters } = await requestersQuery;
             const enrichedTrades = tradesRes.data.map(t => ({
                 ...t,
                 requester_name: requesters?.find(r => r.id === t.requested_by)?.first_name || requesters?.find(r => r.id === t.requested_by)?.full_name || 'Unknown Caregiver'
@@ -88,7 +92,9 @@ const SchedulePage = () => {
 
         if (outgoingRes.data && outgoingRes.data.length > 0) {
             const proposedToIds = [...new Set(outgoingRes.data.map(t => t.proposed_to))];
-            const { data: proposedToUsers } = await supabase.from('users').select('id, full_name, first_name').in('id', proposedToIds);
+            let proposedToUsersQuery = supabase.from('users').select('id, full_name, first_name').in('id', proposedToIds);
+            if (!import.meta.env.DEV) proposedToUsersQuery = proposedToUsersQuery.eq('is_test_account', false);
+            const { data: proposedToUsers } = await proposedToUsersQuery;
             const enrichedOutgoing = outgoingRes.data.map(t => ({
                 ...t,
                 proposed_to_name: proposedToUsers?.find(u => u.id === t.proposed_to)?.first_name || proposedToUsers?.find(u => u.id === t.proposed_to)?.full_name || 'a caregiver'

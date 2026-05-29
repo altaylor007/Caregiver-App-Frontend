@@ -125,6 +125,7 @@ serve(async (req) => {
       .from('users')
       .select('id, full_name, first_name, phone, sms_enabled, sms_only_mentions')
       .eq('status', 'active')
+      .eq('is_test_account', false)
       .or('role.eq.caregiver,is_caregiver.eq.true')
       .neq('id', authUser.id)
 

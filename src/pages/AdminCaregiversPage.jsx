@@ -36,7 +36,7 @@ const AdminCaregiversPage = () => {
         setLoading(true);
         const { data, error } = await supabase
             .from('users')
-            .select('id, full_name, first_name, last_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled, avatar_url')
+            .select('id, full_name, first_name, last_name, email, phone, status, role, acknowledged_responsibilities, payroll_enabled, avatar_url, sms_enabled, sms_only_mentions, sms_shift_reminders')
             .eq('is_caregiver', true)
             .order('created_at', { ascending: false });
 
@@ -686,6 +686,54 @@ const AdminCaregiversPage = () => {
                                     <Phone size={12} />
                                     {cg.phone || <span style={{ fontStyle: 'italic' }}>No phone on file</span>}
                                 </p>
+                                <div style={{ marginTop: '0.75rem', borderTop: '1px dashed var(--neutral-200)', paddingTop: '0.75rem' }}>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', display: 'block', marginBottom: '0.4rem' }}>SMS Preferences</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                            <span style={{ color: 'var(--neutral-500)' }}>SMS notifications:</span>
+                                            <span style={{
+                                                fontSize: '0.7rem',
+                                                backgroundColor: cg.sms_enabled ? 'var(--success-50)' : 'var(--neutral-100)',
+                                                color: cg.sms_enabled ? 'var(--success-700)' : 'var(--neutral-700)',
+                                                padding: '0.1rem 0.4rem',
+                                                borderRadius: '4px',
+                                                border: `1px solid ${cg.sms_enabled ? 'var(--success-200)' : 'var(--neutral-200)'}`
+                                            }}>
+                                                {cg.sms_enabled ? 'Enabled' : 'Disabled'}
+                                            </span>
+                                        </div>
+                                        {cg.sms_enabled && (
+                                            <>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                    <span style={{ color: 'var(--neutral-500)' }}>Message type:</span>
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        backgroundColor: 'var(--primary-50)',
+                                                        color: 'var(--primary-700)',
+                                                        padding: '0.1rem 0.4rem',
+                                                        borderRadius: '4px',
+                                                        border: '1px solid var(--primary-200)'
+                                                    }}>
+                                                        {cg.sms_only_mentions ? 'Mentions only' : 'All messages'}
+                                                    </span>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                    <span style={{ color: 'var(--neutral-500)' }}>Shift reminders:</span>
+                                                    <span style={{
+                                                        fontSize: '0.7rem',
+                                                        backgroundColor: cg.sms_shift_reminders ? 'var(--success-50)' : 'var(--neutral-100)',
+                                                        color: cg.sms_shift_reminders ? 'var(--success-700)' : 'var(--neutral-700)',
+                                                        padding: '0.1rem 0.4rem',
+                                                        borderRadius: '4px',
+                                                        border: `1px solid ${cg.sms_shift_reminders ? 'var(--success-200)' : 'var(--neutral-200)'}`
+                                                    }}>
+                                                        {cg.sms_shift_reminders ? 'Enabled' : 'Disabled'}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
