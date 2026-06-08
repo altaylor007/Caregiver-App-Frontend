@@ -9,6 +9,13 @@ import { useNavigate } from 'react-router-dom';
 const SchedulePage = () => {
     const { user, profile } = useAuth();
     const navigate = useNavigate();
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+    useEffect(() => {
+        const handler = () => setIsMobile(window.innerWidth < 640);
+        window.addEventListener('resize', handler);
+        return () => window.removeEventListener('resize', handler);
+    }, []);
+
     const [shifts, setShifts] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -490,65 +497,89 @@ const SchedulePage = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><span style={{ width: 12, height: 12, borderRadius: 2, backgroundColor: 'var(--neutral-300)' }}></span> Assigned to Others (View Only)</div>
             </div>
 
-            <div className={`calendar-container ${showOnlyMyShifts ? 'is-my-schedule-mode' : ''}`} style={showOnlyMyShifts ? { border: '2px solid var(--primary-300)', backgroundColor: '#fafcff' } : {}}>
-                <div className="calendar-wrapper">
-                    <div className="calendar-row" style={showOnlyMyShifts ? { backgroundColor: 'var(--primary-50)' } : {}}>
-                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                            <div key={day} className="calendar-header-cell">
-                                {day}
-                            </div>
-                        ))}
-                    </div>
-
-                    {loading ? (
-                        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
-                    ) : (
-                        <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                            {calendarDays.map(day => {
+            {isMobile ? (
+                loading ? (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {(() => {
+                            const visibleDays = calendarDays.filter(day => {
+                                if (!isSameMonth(day, currentDate)) return false;
                                 const dayStr = format(day, 'yyyy-MM-dd');
                                 let dayShifts = shifts.filter(s => s.date === dayStr);
+                                if (showOnlyMyShifts) {
+                                    dayShifts = dayShifts.filter(s => s.assigned_to === user.id);
+                                }
+                                return dayShifts.length > 0;
+                            });
 
+                            if (visibleDays.length === 0) {
+                                return (
+                                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--neutral-200)' }}>
+                                        No shifts scheduled for this month.
+                                    </div>
+                                );
+                            }
+
+                            return visibleDays.map(day => {
+                                const dayStr = format(day, 'yyyy-MM-dd');
+                                let dayShifts = shifts.filter(s => s.date === dayStr);
                                 if (showOnlyMyShifts) {
                                     dayShifts = dayShifts.filter(s => s.assigned_to === user.id);
                                 }
 
                                 const isTodayDay = isSameDay(day, getTodayInCentral());
-                                const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                 return (
-                                    <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''}`} style={{ gridColumn: 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : 'transparent', opacity: !isCurrentMonthDay ? 0.7 : 1 }}>
-                                        <div className="calendar-date-label">
-                                            <span>{format(day, 'd')}</span>
-                                            {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
+                                    <div key={dayStr} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <div style={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center', 
+                                            fontWeight: 600, 
+                                            fontSize: '0.9rem', 
+                                            color: 'var(--neutral-700)', 
+                                            padding: '0.25rem 0', 
+                                            borderBottom: '1px solid var(--neutral-200)' 
+                                        }}>
+                                            <span>{format(day, 'EEE, MMM d')}</span>
+                                            {isTodayDay && (
+                                                <span style={{ 
+                                                    fontSize: '0.7rem', 
+                                                    color: 'var(--primary-600)', 
+                                                    backgroundColor: 'var(--primary-100)', 
+                                                    padding: '0.1rem 0.4rem', 
+                                                    borderRadius: '4px' 
+                                                }}>
+                                                    Today
+                                                </span>
+                                            )}
                                         </div>
-
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                             {dayShifts.map(shift => {
                                                 const isMine = shift.assigned_to === user.id;
                                                 const isOpen = !shift.assigned_to && !shift.custom_assigned_name;
                                                 const isOtherCaregiver = !isMine && !isOpen;
 
-                                                let cardClass = 'shift-open'; // amber = open
-                                                if (isMine) cardClass = 'shift-mine'; // teal = mine
-                                                if (isOtherCaregiver) cardClass = 'shift-other'; // grey = other
+                                                let cardClass = 'shift-open';
+                                                if (isMine) cardClass = 'shift-mine';
+                                                if (isOtherCaregiver) cardClass = 'shift-other';
 
                                                 const assigneeName = shift.custom_assigned_name || shift.users?.first_name || shift.users?.full_name || null;
 
                                                 return (
                                                     <div key={shift.id} className={`shift-card-mini ${cardClass}`}>
                                                         <div style={{ fontWeight: 600, marginBottom: '0.15rem' }}>{shift.title}</div>
-                                                        <div style={{ color: 'var(--neutral-600)', marginBottom: isOtherCaregiver || isMine ? '0.25rem' : '0.5rem', fontSize: '0.7rem' }}>
+                                                        <div style={{ color: 'var(--neutral-600)', marginBottom: isOtherCaregiver || isMine ? '0.25rem' : '0.5rem', fontSize: '0.85rem' }}>
                                                             {formatShift(shift.start_time, 'h:mma').toLowerCase()} - {formatShift(shift.end_time, 'h:mma').toLowerCase()}
                                                         </div>
 
-                                                        {/* Show assigned name for non-open shifts */}
                                                         {assigneeName && (
-                                                            <div style={{ fontSize: '0.68rem', color: isMine ? 'var(--primary-700)' : 'var(--neutral-500)', fontWeight: 500, marginBottom: isOtherCaregiver ? 0 : '0.3rem' }}>
+                                                            <div style={{ fontSize: '0.8rem', color: isMine ? 'var(--primary-700)' : 'var(--neutral-500)', fontWeight: 500, marginBottom: isOtherCaregiver ? 0 : '0.3rem' }}>
                                                                 {isMine ? '👤 You' : `👤 ${assigneeName}`}
                                                             </div>
                                                         )}
 
-                                                        {/* Action buttons — only for mine or open */}
                                                         {!printMode && isMine && (() => {
                                                             const pendingTrade = outgoingTrades.find(t => t.shift_id === shift.id);
                                                             if (pendingTrade) {
@@ -579,26 +610,131 @@ const SchedulePage = () => {
                                                             }
                                                         })()}
                                                         {!printMode && isOpen && (
-                                                            <button onClick={(e) => { e.stopPropagation(); handlePickUpShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--warning-500)', color: 'white', marginTop: '0.25rem' }}>
+                                                            <button onClick={(e) => { e.stopPropagation(); handlePickUpShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--warning-500)', color: 'white', marginTop: '0.25rem', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                                 Pick Up
                                                             </button>
                                                         )}
                                                     </div>
                                                 );
                                             })}
-                                            {dayShifts.length === 0 && (
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem', display: 'none' }}>
-                                                    No shifts
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 );
-                            })}
+                            });
+                        })()}
+                    </div>
+                )
+            ) : (
+                <div className={`calendar-container ${showOnlyMyShifts ? 'is-my-schedule-mode' : ''}`} style={showOnlyMyShifts ? { border: '2px solid var(--primary-300)', backgroundColor: '#fafcff' } : {}}>
+                    <div className="calendar-wrapper">
+                        <div className="calendar-row" style={showOnlyMyShifts ? { backgroundColor: 'var(--primary-50)' } : {}}>
+                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                                <div key={day} className="calendar-header-cell">
+                                    {day}
+                                </div>
+                            ))}
                         </div>
-                    )}
+
+                        {loading ? (
+                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
+                        ) : (
+                            <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                                {calendarDays.map(day => {
+                                    const dayStr = format(day, 'yyyy-MM-dd');
+                                    let dayShifts = shifts.filter(s => s.date === dayStr);
+
+                                    if (showOnlyMyShifts) {
+                                        dayShifts = dayShifts.filter(s => s.assigned_to === user.id);
+                                    }
+
+                                    const isTodayDay = isSameDay(day, getTodayInCentral());
+                                    const isCurrentMonthDay = isSameMonth(day, currentDate);
+
+                                    return (
+                                        <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''}`} style={{ gridColumn: 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : 'transparent', opacity: !isCurrentMonthDay ? 0.7 : 1 }}>
+                                            <div className="calendar-date-label">
+                                                <span>{format(day, 'd')}</span>
+                                                {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
+                                            </div>
+
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {dayShifts.map(shift => {
+                                                    const isMine = shift.assigned_to === user.id;
+                                                    const isOpen = !shift.assigned_to && !shift.custom_assigned_name;
+                                                    const isOtherCaregiver = !isMine && !isOpen;
+
+                                                    let cardClass = 'shift-open'; // amber = open
+                                                    if (isMine) cardClass = 'shift-mine'; // teal = mine
+                                                    if (isOtherCaregiver) cardClass = 'shift-other'; // grey = other
+
+                                                    const assigneeName = shift.custom_assigned_name || shift.users?.first_name || shift.users?.full_name || null;
+
+                                                    return (
+                                                        <div key={shift.id} className={`shift-card-mini ${cardClass}`}>
+                                                            <div style={{ fontWeight: 600, marginBottom: '0.15rem' }}>{shift.title}</div>
+                                                            <div style={{ color: 'var(--neutral-600)', marginBottom: isOtherCaregiver || isMine ? '0.25rem' : '0.5rem', fontSize: '0.7rem' }}>
+                                                                {formatShift(shift.start_time, 'h:mma').toLowerCase()} - {formatShift(shift.end_time, 'h:mma').toLowerCase()}
+                                                            </div>
+
+                                                            {/* Show assigned name for non-open shifts */}
+                                                            {assigneeName && (
+                                                                <div style={{ fontSize: '0.68rem', color: isMine ? 'var(--primary-700)' : 'var(--neutral-500)', fontWeight: 500, marginBottom: isOtherCaregiver ? 0 : '0.3rem' }}>
+                                                                    {isMine ? '👤 You' : `👤 ${assigneeName}`}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Action buttons — only for mine or open */}
+                                                            {!printMode && isMine && (() => {
+                                                                const pendingTrade = outgoingTrades.find(t => t.shift_id === shift.id);
+                                                                if (pendingTrade) {
+                                                                    if (pendingTrade.proposed_to) {
+                                                                        return (
+                                                                            <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
+                                                                                ⏳ Pending trade with {pendingTrade.proposed_to_name}
+                                                                            </div>
+                                                                        );
+                                                                    } else {
+                                                                        return (
+                                                                            <button disabled className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', marginTop: '0.25rem', cursor: 'not-allowed', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                Coverage Requested
+                                                                            </button>
+                                                                        );
+                                                                    }
+                                                                } else {
+                                                                    return (
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleTradeShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', minHeight: '44px', width: '100%', backgroundColor: 'var(--primary-600)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.2rem' }}>
+                                                                                Trade Shift
+                                                                            </button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleRequestCoverage(shift); }} className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', width: '100%', backgroundColor: 'white', border: '1px solid var(--neutral-300)', color: 'var(--neutral-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.2rem' }}>
+                                                                                Request Coverage
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                            })()}
+                                                            {!printMode && isOpen && (
+                                                                <button onClick={(e) => { e.stopPropagation(); handlePickUpShift(shift); }} className="btn btn-primary no-print" style={{ fontSize: '0.7rem', padding: '0.2rem', width: '100%', backgroundColor: 'var(--warning-500)', color: 'white', marginTop: '0.25rem' }}>
+                                                                    Pick Up
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                                {dayShifts.length === 0 && (
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--neutral-400)', textAlign: 'center', marginTop: '1rem', display: 'none' }}>
+                                                        No shifts
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Coverage Needed Section */}
             {!printMode && coverageRequests.length > 0 && (
