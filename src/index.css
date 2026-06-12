@@ -576,11 +576,16 @@ h3 {
 
 .topic-unread-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background-color: var(--color-primary, #e53e3e);
-  margin-left: 6px;
+  margin-left: 8px;
   flex-shrink: 0;
   vertical-align: middle;
+}
+
+.topic-item--unread {
+  font-weight: 600;
+  border-left: 3px solid var(--color-primary, #e53e3e);
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { formatShift } from '../lib/timeUtils';
 import { ChevronLeft, MessageSquare, Plus, Trash2, SmilePlus, Zap, Image as ImageIcon, X, Camera } from 'lucide-react';
 
@@ -49,6 +49,7 @@ const MessagesPage = () => {
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
+    const hasAutoSelectedRef = useRef(false);
 
     const unreadTopicIds = useMemo(() => {
         if (!profile?.last_read_messages_at || !messages.length) return new Set();
@@ -60,8 +61,18 @@ const MessagesPage = () => {
         );
     }, [messages, profile?.last_read_messages_at]);
 
+    const latestMessageByTopic = useMemo(() => {
+        const map = new Map();
+        messages.forEach(m => {
+            const current = map.get(m.topic_id);
+            if (!current || new Date(m.created_at) > new Date(current)) {
+                map.set(m.topic_id, m.created_at);
+            }
+        });
+        return map;
+    }, [messages]);
+
     useEffect(() => {
-        fetchTopics();
         fetchUsers();
 
         const topicsSub = supabase
@@ -72,6 +83,12 @@ const MessagesPage = () => {
 
         return () => supabase.removeChannel(topicsSub);
     }, []);
+
+    useEffect(() => {
+        if (view === 'topics') {
+            fetchTopics();
+        }
+    }, [view]);
 
     // Handle deep-linking to a specific message from a notification URL
     useEffect(() => {
@@ -160,9 +177,35 @@ const MessagesPage = () => {
     const fetchTopics = async () => {
         const { data } = await supabase
             .from('message_topics')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (data) setTopics(data);
+            .select('*, messages(created_at)');
+        if (data) {
+            const sortedData = [...data].sort((a, b) => {
+                const aLatest = a.messages && a.messages.length > 0
+                    ? Math.max(...a.messages.map(m => new Date(m.created_at).getTime()))
+                    : 0;
+                const bLatest = b.messages && b.messages.length > 0
+                    ? Math.max(...b.messages.map(m => new Date(m.created_at).getTime()))
+                    : 0;
+
+                if (aLatest !== bLatest) {
+                    return bLatest - aLatest;
+                }
+                return new Date(b.created_at) - new Date(a.created_at);
+            });
+
+            setTopics(sortedData);
+            if (!hasAutoSelectedRef.current) {
+                hasAutoSelectedRef.current = true;
+                const topicId = searchParams.get('topic');
+                if (topicId) {
+                    const matchedTopic = sortedData.find(t => t.id === topicId);
+                    if (matchedTopic) {
+                        setActiveTopic(matchedTopic);
+                        setView('messages');
+                    }
+                }
+            }
+        }
     };
 
     const fetchMessages = async (topicId) => {
@@ -510,38 +553,44 @@ const MessagesPage = () => {
                             {topics.length === 0 ? (
                                 <p className="text-sm text-neutral-muted" style={{ padding: '2rem', textAlign: 'center' }}>No topics yet. Create one!</p>
                             ) : (
-                                topics.map(topic => (
-                                    <div
-                                        key={topic.id}
-                                        onClick={() => { setActiveTopic(topic); setView('messages'); setSearchParams({ topic: topic.id }); }}
-                                        style={{ padding: '1rem', borderBottom: '1px solid var(--neutral-100)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--neutral-50)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                    >
-                                        <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', backgroundColor: 'var(--primary-100)', color: 'var(--primary-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                            <MessageSquare size={20} />
+                                topics.map(topic => {
+                                    const latestDate = latestMessageByTopic.get(topic.id);
+                                    return (
+                                        <div
+                                            key={topic.id}
+                                            onClick={() => { setActiveTopic(topic); setView('messages'); setSearchParams({ topic: topic.id }); }}
+                                            className={unreadTopicIds.has(topic.id) ? 'topic-item--unread' : ''}
+                                            style={{ padding: '1rem', borderBottom: '1px solid var(--neutral-100)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--neutral-50)'}
+                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                            <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-md)', backgroundColor: 'var(--primary-100)', color: 'var(--primary-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <MessageSquare size={20} />
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>
+                                                    {topic.title}
+                                                    {unreadTopicIds.has(topic.id) && (
+                                                        <span className="topic-unread-dot" aria-label="Unread messages" />
+                                                    )}
+                                                </h3>
+                                                <p className="text-xs text-neutral-muted">
+                                                    {latestDate ? formatDistanceToNow(new Date(latestDate), { addSuffix: true }) : 'No messages yet'}
+                                                </p>
+                                            </div>
+                                            {isAdmin && (
+                                                <button
+                                                    onClick={(e) => handleDeleteTopic(topic.id, e)}
+                                                    className="btn btn-outline"
+                                                    style={{ padding: '0.3rem', border: 'none', color: 'var(--danger-500)', flexShrink: 0 }}
+                                                    title="Delete thread"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
                                         </div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <h3 style={{ fontSize: '1rem', marginBottom: '0.1rem' }}>
-                                                {topic.title}
-                                                {unreadTopicIds.has(topic.id) && (
-                                                    <span className="topic-unread-dot" aria-label="Unread messages" />
-                                                )}
-                                            </h3>
-                                            <p className="text-xs text-neutral-muted">Started {formatShift(topic.created_at, 'MMM do, yyyy')}</p>
-                                        </div>
-                                        {isAdmin && (
-                                            <button
-                                                onClick={(e) => handleDeleteTopic(topic.id, e)}
-                                                className="btn btn-outline"
-                                                style={{ padding: '0.3rem', border: 'none', color: 'var(--danger-500)', flexShrink: 0 }}
-                                                title="Delete thread"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        )}
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </>
