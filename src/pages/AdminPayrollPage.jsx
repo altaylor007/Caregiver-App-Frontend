@@ -318,6 +318,9 @@ const PayrollReportView = () => {
             if (enabledRows.length > 0) {
                 const lines = enabledRows.map(r => {
                     const firstName = r.full_name.split(' ')[0];
+                    if (r.holiday_hours === 0) {
+                        return `${firstName}\n${r.total_hours} Hours`;
+                    }
                     return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`;
                 }).join('\n\n');
                 smsBodyEnabled = `WE ${weDate}\n\n${lines}`;
@@ -470,7 +473,13 @@ const PayrollReportView = () => {
                                                     const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
                                                     if (enabledRows.length === 0) return 'No caregivers in this group.';
                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                    const lines = enabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`).join('\n\n');
+                                                    const lines = enabledRows.map(r => {
+                                                        const firstName = r.full_name.split(' ')[0];
+                                                        if (r.holiday_hours === 0) {
+                                                            return `${firstName}\n${r.total_hours} Hours`;
+                                                        }
+                                                        return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`;
+                                                    }).join('\n\n');
                                                     return `WE ${weDate}\n\n${lines}`;
                                                 })()}
                                             </pre>
