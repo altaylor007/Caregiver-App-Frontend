@@ -233,13 +233,39 @@ const PayrollReportView = () => {
                 ...(endYear !== startYear ? getHolidaysForYear(endYear) : [])
             ]);
 
+            // Fetch submitted expenses whose submission date falls within the payroll week.
+            // submitted_at is timestamptz; bound to [start 00:00, end+1 00:00) (UTC).
+            const { data: expenses, error: eError } = await supabase
+                .from('expenses')
+                .select('id, user_id, amount, description, receipt_url, user:users!expenses_user_id_fkey(full_name, payroll_enabled)')
+                .eq('status', 'submitted')
+                .gte('submitted_at', startDateStr)
+                .lt('submitted_at', format(addDays(weekEnd, 1), 'yyyy-MM-dd'));
+            if (eError) throw eError;
+
+            const expensesByUser = {};
+            (expenses || []).forEach(x => {
+                (expensesByUser[x.user_id] = expensesByUser[x.user_id] || []).push(x);
+            });
+
+            const buildItems = (items) => items.map(x => ({
+                id: x.id,
+                amount: Number(x.amount),
+                description: x.description,
+                receipt_url: x.receipt_url,
+                declined: false,
+                rejection_reason: ''
+            }));
+            const sumItems = (items) =>
+                Number(items.reduce((s, x) => s + Number(x.amount), 0).toFixed(2));
+
             const reportRows = (users || []).map(u => {
                 const userShifts = (shifts || []).filter(s => s.assigned_to === u.id);
                 let regularHours = 0;
                 let holidayHours = 0;
                 userShifts.forEach(shift => {
-                    try { 
-                        let duration = (parseISO(shift.end_time) - parseISO(shift.start_time)) / (1000 * 60 * 60); 
+                    try {
+                        let duration = (parseISO(shift.end_time) - parseISO(shift.start_time)) / (1000 * 60 * 60);
                         if (duration < 0) duration += 24;
                         if (holidaySet.has(shift.date)) {
                             holidayHours += duration;
@@ -248,15 +274,36 @@ const PayrollReportView = () => {
                         }
                     } catch (_) { }
                 });
+                const userExpenses = expensesByUser[u.id] || [];
                 return {
                     caregiver_id: u.id,
                     full_name: u.full_name || 'Unnamed',
                     regular_hours: Number(regularHours.toFixed(2)),
                     holiday_hours: Number(holidayHours.toFixed(2)),
                     total_hours: Number((regularHours + holidayHours).toFixed(2)),
-                    payroll_enabled: u.payroll_enabled
+                    payroll_enabled: u.payroll_enabled,
+                    expenses: buildItems(userExpenses),
+                    expense_total: sumItems(userExpenses)
                 };
-            }).filter(r => r.total_hours > 0);
+            }).filter(r => r.total_hours > 0 || r.expense_total > 0);
+
+            // Include caregivers who submitted expenses this week but are not in the
+            // active-caregiver list (e.g. now inactive), so their reimbursement isn't dropped.
+            const includedIds = new Set(reportRows.map(r => r.caregiver_id));
+            Object.keys(expensesByUser).forEach(uid => {
+                if (includedIds.has(uid)) return;
+                const userExpenses = expensesByUser[uid];
+                reportRows.push({
+                    caregiver_id: uid,
+                    full_name: userExpenses[0]?.user?.full_name || 'Unnamed',
+                    regular_hours: 0,
+                    holiday_hours: 0,
+                    total_hours: 0,
+                    payroll_enabled: userExpenses[0]?.user?.payroll_enabled ?? false,
+                    expenses: buildItems(userExpenses),
+                    expense_total: sumItems(userExpenses)
+                });
+            });
 
             setPreviewData({ start_date: startDateStr, end_date: endDateStr, rows: reportRows });
         } catch (err) {
@@ -268,6 +315,32 @@ const PayrollReportView = () => {
     const handleHourEdit = (userId, newHours) => {
         if (!previewData) return;
         setPreviewData({ ...previewData, rows: previewData.rows.map(r => r.caregiver_id === userId ? { ...r, total_hours: Number(newHours) } : r) });
+    };
+
+    const toggleDeclineExpense = (caregiverId, expenseId) => {
+        setPreviewData(prev => ({
+            ...prev,
+            rows: prev.rows.map(r => r.caregiver_id !== caregiverId ? r : {
+                ...r,
+                expenses: r.expenses.map(x => x.id !== expenseId ? x : { ...x, declined: !x.declined })
+            })
+        }));
+    };
+
+    const setExpenseReason = (caregiverId, expenseId, reason) => {
+        setPreviewData(prev => ({
+            ...prev,
+            rows: prev.rows.map(r => r.caregiver_id !== caregiverId ? r : {
+                ...r,
+                expenses: r.expenses.map(x => x.id !== expenseId ? x : { ...x, rejection_reason: reason })
+            })
+        }));
+    };
+
+    const viewReceipt = async (path) => {
+        const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path, 60);
+        if (error) { alert(error.message); return; }
+        window.open(data.signedUrl, '_blank');
     };
 
     const handleReinstate = async (report) => {
@@ -302,10 +375,37 @@ const PayrollReportView = () => {
         if (!window.confirm(`Are you sure you want to finalize this payroll? This will lock the hours and send a text report to Lenke Taylor.`)) return;
         setLoading(true);
         try {
-            const { error } = await supabase.from('payroll_reports').insert([{
-                start_date: previewData.start_date, end_date: previewData.end_date,
-                report_data: previewData.rows, status: 'confirmed'
-            }]);
+            // Build a clean report snapshot: each row keeps only its INCLUDED (non-declined)
+            // expense items, and expense_total reflects only those.
+            const cleanRows = previewData.rows.map(r => {
+                const included = (r.expenses || []).filter(x => !x.declined);
+                return {
+                    caregiver_id: r.caregiver_id,
+                    full_name: r.full_name,
+                    regular_hours: r.regular_hours,
+                    holiday_hours: r.holiday_hours,
+                    total_hours: r.total_hours,
+                    payroll_enabled: r.payroll_enabled,
+                    expense_total: Number(included.reduce((s, x) => s + Number(x.amount), 0).toFixed(2)),
+                    expenses: included.map(x => ({ id: x.id, amount: Number(x.amount), description: x.description, receipt_url: x.receipt_url }))
+                };
+            });
+
+            const reimbursedIds = [];
+            const declined = [];
+            previewData.rows.forEach(r => (r.expenses || []).forEach(x => {
+                if (x.declined) declined.push({ id: x.id, reason: x.rejection_reason || '' });
+                else reimbursedIds.push(x.id);
+            }));
+
+            // Atomic close: report insert + expense settlement run in one DB transaction.
+            const { error } = await supabase.rpc('close_payroll_report', {
+                p_start_date: previewData.start_date,
+                p_end_date: previewData.end_date,
+                p_report_data: cleanRows,
+                p_reimbursed_ids: reimbursedIds,
+                p_declined: declined
+            });
             if (error) throw error;
 
             const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
@@ -318,10 +418,12 @@ const PayrollReportView = () => {
             if (enabledRows.length > 0) {
                 const lines = enabledRows.map(r => {
                     const firstName = r.full_name.split(' ')[0];
+                    const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
+                    const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
                     if (r.holiday_hours === 0) {
-                        return `${firstName}\n${r.total_hours} Hours`;
+                        return `${firstName}\n${r.total_hours} Hours${expLine}`;
                     }
-                    return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`;
+                    return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs${expLine}`;
                 }).join('\n\n');
                 smsBodyEnabled = `WE ${weDate}\n\n${lines}`;
             }
@@ -330,7 +432,9 @@ const PayrollReportView = () => {
                 const lines = disabledRows.map(r => {
                     const firstName = r.full_name.split(' ')[0];
                     const amount = ((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0);
-                    return `${firstName}\n${r.total_hours} hours\n$${amount}`;
+                    const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
+                    const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
+                    return `${firstName}\n${r.total_hours} hours\n$${amount}${expLine}`;
                 }).join('\n\n');
                 smsBodyDisabled = `WE ${weDate}\n\n${lines}`;
             }
@@ -385,6 +489,23 @@ const PayrollReportView = () => {
             if (smsBodyDisabled) {
                 if (lenkePhone) await sendSms(lenkePhone, smsBodyDisabled);
                 if (jedPhone) await sendSms(jedPhone, smsBodyDisabled);
+            }
+
+            // Notify each caregiver whose expense(s) were declined this period.
+            // send-sms resolves the phone by userId and respects the caregiver's sms_enabled setting.
+            for (const r of previewData.rows) {
+                const declinedForUser = (r.expenses || []).filter(x => x.declined);
+                if (declinedForUser.length === 0) continue;
+                const itemLines = declinedForUser.map(x => {
+                    const reason = (x.rejection_reason || '').trim();
+                    return `- $${Number(x.amount).toFixed(2)} ${x.description}${reason ? ` (${reason})` : ''}`;
+                }).join('\n');
+                const declineBody = `Hi ${r.full_name.split(' ')[0]}, an expense you submitted was not approved this pay period:\n${itemLines}\n\nContact your manager with any questions.`;
+                try {
+                    await supabase.functions.invoke('send-sms', { body: { userId: r.caregiver_id, messageBody: declineBody } });
+                } catch (smsErr) {
+                    console.warn(`Failed to send decline SMS to ${r.full_name}:`, smsErr);
+                }
             }
 
             alert('Payroll report has been finalized and text messages have been sent.');
@@ -442,7 +563,8 @@ const PayrollReportView = () => {
                                         </thead>
                                         <tbody>
                                             {previewData.rows.map(row => (
-                                                <tr key={row.caregiver_id} style={{ borderBottom: '1px solid var(--neutral-200)' }}>
+                                                <React.Fragment key={row.caregiver_id}>
+                                                <tr style={{ borderBottom: (row.expenses && row.expenses.length) ? 'none' : '1px solid var(--neutral-200)' }}>
                                                     <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>{row.full_name}</td>
                                                     <td style={{ padding: '0.5rem 1rem' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
@@ -455,6 +577,32 @@ const PayrollReportView = () => {
                                                         </div>
                                                     </td>
                                                 </tr>
+                                                {row.expenses && row.expenses.length > 0 && (
+                                                <tr style={{ borderBottom: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
+                                                    <td colSpan={2} style={{ padding: '0.5rem 1rem 0.75rem' }}>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', marginBottom: '0.5rem' }}>Expense reimbursements</div>
+                                                        {row.expenses.map(item => (
+                                                            <div key={item.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', opacity: item.declined ? 0.6 : 1 }}>
+                                                                <span style={{ fontWeight: 600, minWidth: '70px' }}>${item.amount.toFixed(2)}</span>
+                                                                <span style={{ flex: 1, minWidth: '120px' }}>{item.description}</span>
+                                                                {item.receipt_url && (
+                                                                    <button type="button" className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => viewReceipt(item.receipt_url)}>Receipt</button>
+                                                                )}
+                                                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}>
+                                                                    <input type="checkbox" checked={item.declined} onChange={() => toggleDeclineExpense(row.caregiver_id, item.id)} /> Decline
+                                                                </label>
+                                                                {item.declined && (
+                                                                    <input type="text" className="form-input" placeholder="Reason (optional — sent to caregiver)" style={{ flexBasis: '100%', padding: '0.4rem', fontSize: '0.8rem' }} value={item.rejection_reason} onChange={e => setExpenseReason(row.caregiver_id, item.id, e.target.value)} />
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                        <div style={{ fontSize: '0.8rem', fontWeight: 600, marginTop: '0.25rem' }}>
+                                                            Reimbursement total: ${row.expenses.filter(i => !i.declined).reduce((s, i) => s + i.amount, 0).toFixed(2)}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                )}
+                                                </React.Fragment>
                                             ))}
                                         </tbody>
                                     </table>
@@ -470,18 +618,20 @@ const PayrollReportView = () => {
                                             </div>
                                             <pre style={{ fontSize: '0.8rem', backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid var(--neutral-200)', whiteSpace: 'pre-wrap', minHeight: '100px', margin: 0 }}>
                                                 {(() => {
-                                                    const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
-                                                    if (enabledRows.length === 0) return 'No caregivers in this group.';
-                                                    const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                    const lines = enabledRows.map(r => {
-                                                        const firstName = r.full_name.split(' ')[0];
-                                                        if (r.holiday_hours === 0) {
-                                                            return `${firstName}\n${r.total_hours} Hours`;
-                                                        }
-                                                        return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`;
-                                                    }).join('\n\n');
-                                                    return `WE ${weDate}\n\n${lines}`;
-                                                })()}
+                                                     const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
+                                                     if (enabledRows.length === 0) return 'No caregivers in this group.';
+                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
+                                                     const lines = enabledRows.map(r => {
+                                                         const firstName = r.full_name.split(' ')[0];
+                                                         const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
+                                                         const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
+                                                         if (r.holiday_hours === 0) {
+                                                             return `${firstName}\n${r.total_hours} Hours${expLine}`;
+                                                         }
+                                                         return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs${expLine}`;
+                                                     }).join('\n\n');
+                                                     return `WE ${weDate}\n\n${lines}`;
+                                                 })()}
                                             </pre>
                                         </div>
                                         <div>
@@ -490,12 +640,16 @@ const PayrollReportView = () => {
                                             </div>
                                             <pre style={{ fontSize: '0.8rem', backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid var(--neutral-200)', whiteSpace: 'pre-wrap', minHeight: '100px', margin: 0 }}>
                                                 {(() => {
-                                                    const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
-                                                    if (disabledRows.length === 0) return 'No caregivers in this group.';
-                                                    const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                    const lines = disabledRows.map(r => `${r.full_name.split(' ')[0]}\n${r.total_hours} hours\n$${((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0)}`).join('\n\n');
-                                                    return `WE ${weDate}\n\n${lines}`;
-                                                })()}
+                                                     const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
+                                                     if (disabledRows.length === 0) return 'No caregivers in this group.';
+                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
+                                                     const lines = disabledRows.map(r => {
+                                                         const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
+                                                         const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
+                                                         return `${r.full_name.split(' ')[0]}\n${r.total_hours} hours\n$${((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0)}${expLine}`;
+                                                     }).join('\n\n');
+                                                     return `WE ${weDate}\n\n${lines}`;
+                                                 })()}
                                             </pre>
                                         </div>
                                     </div>

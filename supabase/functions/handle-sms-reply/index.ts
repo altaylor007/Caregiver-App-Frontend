@@ -44,6 +44,8 @@ serve(async (req) => {
         const isYesReply = normalizedReply.startsWith('YES');
         const replyParts = normalizedReply.split(/\s+/);
 
+        let replyText = '';
+
         if (isYesReply) {
             let tradeQuery = supabaseClient
                 .from('shift_trades')
@@ -88,8 +90,69 @@ serve(async (req) => {
             }
         }
 
+        // 4b. Otherwise, see if this is an expense submission (EXPENSE keyword OR photo + amount).
+        if (!isYesReply) {
+            const numMedia = parseInt((formData.get('NumMedia') || '0').toString(), 10) || 0;
+            const hasMedia = numMedia > 0;
+            const rawBody = messageBody.toString().trim();
+            const isExpenseKeyword = /^expense\b/i.test(rawBody);
+            const amountMatch = rawBody.match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+            const amount = amountMatch ? parseFloat(amountMatch[1]) : null;
+            const looksLikeExpense = isExpenseKeyword || (hasMedia && !!amount && amount > 0);
+
+            if (looksLikeExpense) {
+                const formatHelp = "To submit an expense, text a photo of the receipt with the amount and a short description, e.g. EXPENSE 25.00 gas for client visit.";
+                if (!amount || amount <= 0) {
+                    replyText = `We couldn't find an amount in your message. ${formatHelp}`;
+                } else if (!hasMedia) {
+                    replyText = `Please include a photo of the receipt. ${formatHelp}`;
+                } else {
+                    try {
+                        let description = rawBody;
+                        if (isExpenseKeyword) description = description.replace(/^expense\b/i, '');
+                        if (amountMatch) description = description.replace(amountMatch[0], '');
+                        description = description.replace(/\s+/g, ' ').trim();
+                        if (!description) description = 'Expense submitted via text';
+
+                        const mediaUrl = formData.get('MediaUrl0')?.toString();
+                        const mediaType = (formData.get('MediaContentType0') || 'image/jpeg').toString();
+                        const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+                        const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+                        const mediaRes = await fetch(mediaUrl, {
+                            headers: { Authorization: 'Basic ' + btoa(`${accountSid}:${authToken}`) }
+                        });
+                        if (!mediaRes.ok) throw new Error(`Media fetch failed: ${mediaRes.status}`);
+                        const mediaBytes = new Uint8Array(await mediaRes.arrayBuffer());
+                        const ext = (mediaType.split('/')[1] || 'jpg').split(';')[0];
+                        const receiptPath = `${user.id}/sms_${Date.now()}.${ext}`;
+
+                        const { error: upErr } = await supabaseClient.storage
+                            .from('receipts')
+                            .upload(receiptPath, mediaBytes, { contentType: mediaType });
+                        if (upErr) throw upErr;
+
+                        const { error: insErr } = await supabaseClient.from('expenses').insert({
+                            user_id: user.id,
+                            amount,
+                            description,
+                            receipt_url: receiptPath,
+                            source: 'sms'
+                        });
+                        if (insErr) throw insErr;
+
+                        replyText = `Got it — $${amount.toFixed(2)} expense recorded. It will be reviewed at the next payroll close.`;
+                    } catch (expErr) {
+                        console.error('Failed to record SMS expense:', expErr);
+                        replyText = "Sorry, we couldn't save your expense. Please try again or submit it in the app.";
+                    }
+                }
+            }
+        }
+
         // 5. Respond to Twilio (Empty TwiML response means "don't reply back with anything immediately")
-        const twiml = '<Response></Response>'
+        const twiml = replyText
+            ? `<Response><Message>${replyText}</Message></Response>`
+            : '<Response></Response>';
         return new Response(twiml, {
             headers: { "Content-Type": "text/xml" },
             status: 200,

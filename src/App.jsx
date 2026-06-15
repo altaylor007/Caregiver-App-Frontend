@@ -8,6 +8,7 @@ import AdminSchedulePage from './pages/AdminSchedulePage';
 import AdminReportsPage from './pages/AdminReportsPage';
 import AdminPayrollPage from './pages/AdminPayrollPage';
 import CaregiverDocumentsPage from './pages/CaregiverDocumentsPage';
+import ExpensesPage from './pages/ExpensesPage';
 import AvailabilityPage from './pages/AvailabilityPage';
 import SchedulePage from './pages/SchedulePage';
 import CaregiverDirectoryPage from './pages/CaregiverDirectoryPage';
@@ -68,6 +69,7 @@ function App() {
             <Route path="documents" element={<CaregiverDocumentsPage />} />
             <Route path="availability" element={<AvailabilityPage />} />
             <Route path="directory" element={<CaregiverDirectoryPage />} />
+            <Route path="expenses" element={<ExpensesPage />} />
 
             {/* Admin specific sub-pages */}
             <Route path="admin/caregivers" element={<AdminRoute><AdminCaregiversPage /></AdminRoute>} />

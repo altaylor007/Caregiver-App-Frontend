@@ -194,6 +194,83 @@ export type Database = {
         }
         Relationships: []
       }
+      expenses: {
+        Row: {
+          id: string
+          user_id: string
+          amount: number
+          description: string
+          receipt_url: string | null
+          source: string
+          status: string
+          rejection_reason: string | null
+          payroll_report_id: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          submitted_at: string
+          resubmitted_from: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          amount: number
+          description: string
+          receipt_url?: string | null
+          source?: string
+          status?: string
+          rejection_reason?: string | null
+          payroll_report_id?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          submitted_at?: string
+          resubmitted_from?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          amount?: number
+          description?: string
+          receipt_url?: string | null
+          source?: string
+          status?: string
+          rejection_reason?: string | null
+          payroll_report_id?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          submitted_at?: string
+          resubmitted_from?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_payroll_report_id_fkey"
+            columns: ["payroll_report_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_reports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_resubmitted_from_fkey"
+            columns: ["resubmitted_from"]
+            isOneToOne: false
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_reactions: {
         Row: {
           created_at: string | null

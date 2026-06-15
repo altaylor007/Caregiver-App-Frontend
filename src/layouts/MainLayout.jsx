@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Home, Calendar, CalendarCheck, Users, MessageSquare, Menu, X, FileText, Bell, FolderOpen, Shield, User, Contact, Moon, Sun } from 'lucide-react';
+import { LogOut, Home, Calendar, CalendarCheck, Users, MessageSquare, Menu, X, FileText, Bell, FolderOpen, Shield, User, Contact, Moon, Sun, Receipt } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
@@ -316,6 +316,14 @@ const MainLayout = () => {
                             >
                                 <Contact />
                                 <span>Directory</span>
+                            </NavLink>
+
+                            <NavLink
+                                to="/expenses"
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                            >
+                                <Receipt />
+                                <span>Expenses</span>
                             </NavLink>
                         </>
                     )}
