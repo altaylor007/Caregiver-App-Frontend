@@ -209,6 +209,7 @@ export type Database = {
           reviewed_at: string | null
           submitted_at: string
           resubmitted_from: string | null
+          no_receipt_reason: string | null
         }
         Insert: {
           id?: string
@@ -224,6 +225,7 @@ export type Database = {
           reviewed_at?: string | null
           submitted_at?: string
           resubmitted_from?: string | null
+          no_receipt_reason?: string | null
         }
         Update: {
           id?: string
@@ -239,6 +241,7 @@ export type Database = {
           reviewed_at?: string | null
           submitted_at?: string
           resubmitted_from?: string | null
+          no_receipt_reason?: string | null
         }
         Relationships: [
           {

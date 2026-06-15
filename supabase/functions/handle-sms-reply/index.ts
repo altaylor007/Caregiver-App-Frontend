@@ -101,46 +101,57 @@ serve(async (req) => {
             const looksLikeExpense = isExpenseKeyword || (hasMedia && !!amount && amount > 0);
 
             if (looksLikeExpense) {
-                const formatHelp = "To submit an expense, text a photo of the receipt with the amount and a short description, e.g. EXPENSE 25.00 gas for client visit.";
+                const formatHelp = "To submit an expense, text the amount and a short description, and attach a photo of the receipt if you have one. Example: EXPENSE 25.00 gas for client visit.";
+
+                // Parse the description by stripping the keyword and the amount token.
+                let description = rawBody;
+                if (isExpenseKeyword) description = description.replace(/^expense\b/i, '');
+                if (amountMatch) description = description.replace(amountMatch[0], '');
+                description = description.replace(/\s+/g, ' ').trim();
+
                 if (!amount || amount <= 0) {
                     replyText = `We couldn't find an amount in your message. ${formatHelp}`;
-                } else if (!hasMedia) {
-                    replyText = `Please include a photo of the receipt. ${formatHelp}`;
+                } else if (!hasMedia && !description) {
+                    replyText = `Please attach a photo of the receipt, or include a note explaining why there's no receipt. ${formatHelp}`;
                 } else {
                     try {
-                        let description = rawBody;
-                        if (isExpenseKeyword) description = description.replace(/^expense\b/i, '');
-                        if (amountMatch) description = description.replace(amountMatch[0], '');
-                        description = description.replace(/\s+/g, ' ').trim();
-                        if (!description) description = 'Expense submitted via text';
+                        let receiptPath = null;
+                        let noReceiptReason = null;
 
-                        const mediaUrl = formData.get('MediaUrl0')?.toString();
-                        const mediaType = (formData.get('MediaContentType0') || 'image/jpeg').toString();
-                        const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-                        const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-                        const mediaRes = await fetch(mediaUrl, {
-                            headers: { Authorization: 'Basic ' + btoa(`${accountSid}:${authToken}`) }
-                        });
-                        if (!mediaRes.ok) throw new Error(`Media fetch failed: ${mediaRes.status}`);
-                        const mediaBytes = new Uint8Array(await mediaRes.arrayBuffer());
-                        const ext = (mediaType.split('/')[1] || 'jpg').split(';')[0];
-                        const receiptPath = `${user.id}/sms_${Date.now()}.${ext}`;
-
-                        const { error: upErr } = await supabaseClient.storage
-                            .from('receipts')
-                            .upload(receiptPath, mediaBytes, { contentType: mediaType });
-                        if (upErr) throw upErr;
+                        if (hasMedia) {
+                            const mediaUrl = formData.get('MediaUrl0')?.toString();
+                            const mediaType = (formData.get('MediaContentType0') || 'image/jpeg').toString();
+                            const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+                            const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+                            const mediaRes = await fetch(mediaUrl, {
+                                headers: { Authorization: 'Basic ' + btoa(`${accountSid}:${authToken}`) }
+                            });
+                            if (!mediaRes.ok) throw new Error(`Media fetch failed: ${mediaRes.status}`);
+                            const mediaBytes = new Uint8Array(await mediaRes.arrayBuffer());
+                            const ext = (mediaType.split('/')[1] || 'jpg').split(';')[0];
+                            receiptPath = `${user.id}/sms_${Date.now()}.${ext}`;
+                            const { error: upErr } = await supabaseClient.storage
+                                .from('receipts')
+                                .upload(receiptPath, mediaBytes, { contentType: mediaType });
+                            if (upErr) throw upErr;
+                        } else {
+                            // No photo: the caregiver's text serves as the no-receipt explanation.
+                            noReceiptReason = description;
+                        }
 
                         const { error: insErr } = await supabaseClient.from('expenses').insert({
                             user_id: user.id,
                             amount,
-                            description,
+                            description: description || 'Expense submitted via text',
                             receipt_url: receiptPath,
+                            no_receipt_reason: noReceiptReason,
                             source: 'sms'
                         });
                         if (insErr) throw insErr;
 
-                        replyText = `Got it — $${amount.toFixed(2)} expense recorded. It will be reviewed at the next payroll close.`;
+                        replyText = receiptPath
+                            ? `Got it — $${amount.toFixed(2)} expense recorded. It will be reviewed at the next payroll close.`
+                            : `Got it — $${amount.toFixed(2)} expense recorded without a receipt. It will be reviewed at the next payroll close.`;
                     } catch (expErr) {
                         console.error('Failed to record SMS expense:', expErr);
                         replyText = "Sorry, we couldn't save your expense. Please try again or submit it in the app.";

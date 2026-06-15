@@ -237,7 +237,7 @@ const PayrollReportView = () => {
             // submitted_at is timestamptz; bound to [start 00:00, end+1 00:00) (UTC).
             const { data: expenses, error: eError } = await supabase
                 .from('expenses')
-                .select('id, user_id, amount, description, receipt_url, user:users!expenses_user_id_fkey(full_name, payroll_enabled)')
+                .select('id, user_id, amount, description, receipt_url, no_receipt_reason, user:users!expenses_user_id_fkey(full_name, payroll_enabled)')
                 .eq('status', 'submitted')
                 .gte('submitted_at', startDateStr)
                 .lt('submitted_at', format(addDays(weekEnd, 1), 'yyyy-MM-dd'));
@@ -253,6 +253,7 @@ const PayrollReportView = () => {
                 amount: Number(x.amount),
                 description: x.description,
                 receipt_url: x.receipt_url,
+                no_receipt_reason: x.no_receipt_reason,
                 declined: false,
                 rejection_reason: ''
             }));
@@ -387,7 +388,7 @@ const PayrollReportView = () => {
                     total_hours: r.total_hours,
                     payroll_enabled: r.payroll_enabled,
                     expense_total: Number(included.reduce((s, x) => s + Number(x.amount), 0).toFixed(2)),
-                    expenses: included.map(x => ({ id: x.id, amount: Number(x.amount), description: x.description, receipt_url: x.receipt_url }))
+                    expenses: included.map(x => ({ id: x.id, amount: Number(x.amount), description: x.description, receipt_url: x.receipt_url, no_receipt_reason: x.no_receipt_reason }))
                 };
             });
 
@@ -585,8 +586,10 @@ const PayrollReportView = () => {
                                                             <div key={item.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', opacity: item.declined ? 0.6 : 1 }}>
                                                                 <span style={{ fontWeight: 600, minWidth: '70px' }}>${item.amount.toFixed(2)}</span>
                                                                 <span style={{ flex: 1, minWidth: '120px' }}>{item.description}</span>
-                                                                {item.receipt_url && (
+                                                                {item.receipt_url ? (
                                                                     <button type="button" className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={() => viewReceipt(item.receipt_url)}>Receipt</button>
+                                                                ) : (
+                                                                    <span className="text-sm text-danger" style={{ flexBasis: '100%' }}>No receipt — {item.no_receipt_reason || 'no explanation given'}</span>
                                                                 )}
                                                                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}>
                                                                     <input type="checkbox" checked={item.declined} onChange={() => toggleDeclineExpense(row.caregiver_id, item.id)} /> Decline

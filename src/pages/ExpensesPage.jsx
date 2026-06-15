@@ -13,6 +13,7 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [resubmitFrom, setResubmitFrom] = useState(null);
+  const [noReceiptReason, setNoReceiptReason] = useState('');
 
   const loadExpenses = async () => {
     setLoading(true);
@@ -47,6 +48,10 @@ export default function ExpensesPage() {
       setError('Receipt image must be under 10 MB.');
       return;
     }
+    if (!file && !noReceiptReason.trim()) {
+      setError("Please attach a receipt, or explain why you don't have one.");
+      return;
+    }
     setSubmitting(true);
     try {
       let receiptPath = null;
@@ -64,7 +69,8 @@ export default function ExpensesPage() {
         description: description.trim(),
         receipt_url: receiptPath,
         source: 'app',
-        resubmitted_from: resubmitFrom
+        resubmitted_from: resubmitFrom,
+        no_receipt_reason: receiptPath ? null : noReceiptReason.trim()
       }]);
       if (insErr) throw new Error(insErr.message);
       setSuccess(resubmitFrom ? 'Expense resubmitted.' : 'Expense submitted.');
@@ -72,6 +78,7 @@ export default function ExpensesPage() {
       setDescription('');
       setFile(null);
       setResubmitFrom(null);
+      setNoReceiptReason('');
       loadExpenses();
     } catch (err) {
       setError(err.message);
@@ -87,6 +94,7 @@ export default function ExpensesPage() {
     setFile(null);
     setError('');
     setSuccess('');
+    setNoReceiptReason('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -95,6 +103,7 @@ export default function ExpensesPage() {
     setAmount('');
     setDescription('');
     setFile(null);
+    setNoReceiptReason('');
   };
 
   const viewReceipt = async (path) => {
@@ -148,7 +157,7 @@ export default function ExpensesPage() {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Receipt (optional)</label>
+            <label className="form-label">Receipt</label>
             <input
               className="form-input"
               type="file"
@@ -156,6 +165,18 @@ export default function ExpensesPage() {
               onChange={e => setFile(e.target.files?.[0] || null)}
             />
           </div>
+          {!file && (
+            <div className="form-group">
+              <label className="form-label">Reason for no receipt (required if no receipt attached)</label>
+              <textarea
+                className="form-input"
+                rows={2}
+                value={noReceiptReason}
+                onChange={e => setNoReceiptReason(e.target.value)}
+                placeholder="e.g. Receipt was lost / vendor didn't provide one"
+              />
+            </div>
+          )}
           {error && <p className="text-danger">{error}</p>}
           {success && <p className="text-success">{success}</p>}
           <button className="btn btn-primary" type="submit" disabled={submitting}>
