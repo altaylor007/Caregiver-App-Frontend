@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     try {
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            Deno.env.get('SERVICE_ROLE_JWT') ?? ''
         )
 
         // Query active users with SMS notifications enabled

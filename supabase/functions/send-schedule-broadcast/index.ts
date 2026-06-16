@@ -6,17 +6,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function formatDate(dateStr: string): { month: string; day: number } {
+  const parts = dateStr.split(/[-T]/)
+  let date: Date
+  if (parts.length >= 3) {
+    const year = parseInt(parts[0])
+    const month = parseInt(parts[1]) - 1
+    const day = parseInt(parts[2])
+    date = new Date(Date.UTC(year, month, day))
+  } else {
+    date = new Date(dateStr)
+  }
+
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ]
+  return {
+    month: months[date.getUTCMonth()] || months[0],
+    day: date.getUTCDate()
+  }
+}
+
+function getWeekLabel(startStr: string, endStr: string): string {
+  const start = formatDate(startStr)
+  const end = formatDate(endStr)
+  return `${start.month} ${start.day} – ${end.month} ${end.day}`
+}
+
 serve(async (req) => {
-  // Handle CORS preflight request
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 1. Validate authorization and extract user session
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      console.error("Missing Authorization header")
       return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -25,231 +50,146 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    
+
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: { Authorization: authHeader }
-      },
+      global: { headers: { Authorization: authHeader } },
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
     const { data: { user: authUser }, error: authError } = await userClient.auth.getUser()
     if (authError || !authUser) {
-      console.error("Auth error:", authError)
       return new Response(JSON.stringify({ error: "Invalid token or not authenticated" }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // 2. Verify caller is admin or manager
     const { data: profile, error: profileError } = await userClient
       .from('users')
-      .select('id, role')
+      .select('role')
       .eq('id', authUser.id)
       .single()
 
     if (profileError || !profile || !['admin', 'manager'].includes(profile.role)) {
-      console.error("User is not authorized (role check failed):", profileError, profile)
       return new Response(JSON.stringify({ error: "Forbidden: user role must be admin or manager" }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // 3. Verify Twilio environment variables
+
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
-    const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN')
     const twilioPhoneNumber = Deno.env.get('TWILIO_PHONE_NUMBER')
 
-    if (!twilioAccountSid || !twilioAuthToken || !twilioPhoneNumber) {
-      console.error("Missing Twilio configuration")
-      return new Response(JSON.stringify({ error: "Server misconfiguration: Twilio credentials missing" }), {
+    if (!twilioAccountSid || !twilioPhoneNumber) {
+      return new Response(JSON.stringify({ error: "Twilio credentials missing" }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // 4. Parse and validate request body
-    let bodyData
-    try {
-      bodyData = await req.json()
-    } catch (e) {
-      console.error("Failed to parse request JSON:", e)
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+    const { broadcastId, periodStart, periodEnd } = await req.json()
+
+    if (!periodStart || !periodEnd) {
+      return new Response(JSON.stringify({ error: "Missing periodStart or periodEnd" }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const { title, message, period_start, period_end } = bodyData
-    if (!title || !message || !period_start || !period_end) {
-      console.error("Missing required fields in request body:", bodyData)
-      return new Response(JSON.stringify({ error: "Missing required fields: title, message, period_start, and period_end are required." }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
+    const weekLabel = getWeekLabel(periodStart, periodEnd)
+    const messageBody = `Agnes Care Team: Your schedule for ${weekLabel} has been published. View and acknowledge it here: https://radiant-yeot-a82a87.netlify.app/`
 
-    // 5. Initialize service role client for privileged database queries
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
 
-    // 6. Insert schedule broadcast
-    const { data: broadcast, error: insertError } = await supabaseAdmin
-      .from('schedule_broadcasts')
-      .insert({
-        created_by: authUser.id,
-        title,
-        message,
-        period_start,
-        period_end
-      })
-      .select('id')
-      .single()
+    const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_JWT') ?? ''
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    if (insertError || !broadcast) {
-      console.error("Failed to insert broadcast into DB:", insertError)
-      return new Response(JSON.stringify({ error: "Failed to create schedule broadcast record" }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const broadcastId = broadcast.id
-
-    // 7. Fetch active caregivers (caregiver role or dual-role admin/manager) excluding caller
-    const { data: caregivers, error: fetchError } = await supabaseAdmin
+    // Query active caregivers with SMS enabled and phone numbers
+    const { data: users, error: usersError } = await supabaseClient
       .from('users')
-      .select('id, full_name, first_name, phone, sms_enabled, sms_only_mentions')
+      .select('id, phone')
+      .eq('sms_enabled', true)
       .eq('status', 'active')
-      .eq('is_test_account', false)
+      .not('phone', 'is', null)
       .or('role.eq.caregiver,is_caregiver.eq.true')
-      .neq('id', authUser.id)
 
-    if (fetchError) {
-      console.error("Failed to fetch active caregivers:", fetchError)
-      return new Response(JSON.stringify({ error: "Failed to fetch caregivers list" }), {
+    if (usersError) {
+      console.error("Error querying users:", usersError)
+      return new Response(JSON.stringify({ error: usersError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const caregiverList = caregivers ?? []
-    let notifiedCount = 0
+    let sent = 0
+    let failed = 0
 
-    // 8. Insert in-app notifications
-    if (caregiverList.length > 0) {
-      const notificationsToInsert = caregiverList.map((cg) => ({
-        user_id: cg.id,
-        actor_id: authUser.id,
-        type: 'schedule_broadcast',
-        reference_id: broadcastId,
-        is_read: false
+    if (users && users.length > 0) {
+      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`
+
+      const smsResults = await Promise.all(users.map(async (user) => {
+        let status: 'sent' | 'failed' = 'failed'
+        let providerId: string | null = null
+        let errorMessage: string | null = null
+
+        try {
+          const body = new URLSearchParams({
+            To: user.phone,
+            From: twilioPhoneNumber,
+            Body: messageBody
+          })
+
+          const twilioResponse = await fetch(twilioUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Authorization': 'Basic ' + btoa(`${Deno.env.get('TWILIO_API_KEY_SID')}:${Deno.env.get('TWILIO_API_KEY_SECRET')}`)
+            },
+            body: body.toString()
+          })
+
+          const twilioData = await twilioResponse.json()
+
+          if (twilioResponse.ok) {
+            status = 'sent'
+            providerId = twilioData.sid
+          } else {
+            errorMessage = twilioData.message || "Twilio error"
+          }
+        } catch (err) {
+          errorMessage = (err as Error).message || "Network error"
+        }
+
+        // Log the SMS attempt
+        try {
+          await supabaseClient.from('sms_logs').insert({
+            user_id: user.id,
+            phone_number: user.phone,
+            direction: 'outbound',
+            message_body: messageBody,
+            status: status,
+            provider_id: providerId,
+            error_message: errorMessage
+          })
+        } catch (logErr) {
+          console.error(`Failed to log SMS for user ${user.id}:`, logErr)
+        }
+
+        return status === 'sent'
       }))
 
-      const { error: notificationError } = await supabaseAdmin
-        .from('notifications')
-        .insert(notificationsToInsert)
-
-      if (notificationError) {
-        console.error("Failed to insert notifications:", notificationError)
-        return new Response(JSON.stringify({ error: "Failed to create in-app notifications" }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
-      notifiedCount = caregiverList.length
+      sent = smsResults.filter(Boolean).length
+      failed = smsResults.length - sent
     }
 
-    // 9. Send SMS to opted-in caregivers and log the results
-    const smsRecipients = caregiverList.filter((cg) => cg.sms_enabled && cg.phone)
-    const smsBody = `${title}: ${message} Open the app to review your shifts and acknowledge.`
+    return new Response(JSON.stringify({ sent, failed }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
 
-    const sendSmsAndLog = async (cg: any): Promise<boolean> => {
-      try {
-        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`
-        const twilioRequestBody = new URLSearchParams({
-          To: cg.phone,
-          From: twilioPhoneNumber,
-          Body: smsBody
-        })
-
-        const response = await fetch(twilioUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`)
-          },
-          body: twilioRequestBody.toString()
-        })
-
-        const twilioData = await response.json()
-
-        if (!response.ok) {
-          console.error(`Twilio send failed for user ${cg.id}:`, twilioData)
-          await supabaseAdmin.from('sms_logs').insert({
-            user_id: cg.id,
-            phone_number: cg.phone,
-            direction: 'outbound',
-            message_body: smsBody,
-            status: 'failed',
-            error_message: twilioData.message || "Twilio failed to send SMS"
-          })
-          return false
-        }
-
-        await supabaseAdmin.from('sms_logs').insert({
-          user_id: cg.id,
-          phone_number: cg.phone,
-          direction: 'outbound',
-          message_body: smsBody,
-          status: 'sent',
-          provider_id: twilioData.sid
-        })
-        return true
-      } catch (err: any) {
-        console.error(`Error sending SMS to user ${cg.id}:`, err)
-        try {
-          await supabaseAdmin.from('sms_logs').insert({
-            user_id: cg.id,
-            phone_number: cg.phone,
-            direction: 'outbound',
-            message_body: smsBody,
-            status: 'failed',
-            error_message: err.message || "Network error sending SMS"
-          })
-        } catch (dbErr) {
-          console.error("Failed to write failed sms log to database:", dbErr)
-        }
-        return false
-      }
-    }
-
-    const smsResults = await Promise.all(smsRecipients.map(sendSmsAndLog))
-    const smsSentCount = smsResults.filter(r => r === true).length
-    const smsFailedCount = smsResults.filter(r => r === false).length
-
-    // 10. Return success status and broadcast statistics
-    return new Response(
-      JSON.stringify({
-        success: true,
-        broadcast_id: broadcastId,
-        notified: notifiedCount,
-        sms_sent: smsSentCount,
-        sms_failed: smsFailedCount
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
-      }
-    )
-
-  } catch (err: any) {
-    console.error("Unhandled error in edge function:", err)
-    return new Response(JSON.stringify({ error: err.message || "Internal server error" }), {
+  } catch (err) {
+    console.error("Unhandled error in send-schedule-broadcast:", err)
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

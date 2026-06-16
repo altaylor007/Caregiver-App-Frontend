@@ -22,7 +22,7 @@ serve(async (req) => {
 
         // Initialize Supabase admin client with service role key to bypass RLS
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_JWT') ?? '';
 
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
             auth: {
