@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { supabaseClient } from "../_shared/supabase.ts"
+import { createClient } from 'jsr:@supabase/supabase-js@2'
+
+// Inline service-role client so this function never depends on the shared file being
+// separately deployed. SERVICE_ROLE_JWT is a 3-part eyJ… JWT that PostgREST accepts;
+// the new sb_secret_… format is not a JWT and is rejected ("Expected 3 parts in JWT").
+const supabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SERVICE_ROLE_JWT') ?? '',
+    { auth: { persistSession: false, autoRefreshToken: false } }
+)
 
 serve(async (req) => {
     try {
@@ -7,23 +16,33 @@ serve(async (req) => {
         const formData = await req.formData()
 
         const fromNumber = formData.get('From') // The caregiver's phone number
-        const messageBody = formData.get('Body') // e.g. "YES"
+        const messageBody = (formData.get('Body') ?? '').toString() // may be empty for a photo-only MMS
+        const numMediaTop = parseInt((formData.get('NumMedia') || '0').toString(), 10) || 0;
 
-        if (!fromNumber || !messageBody) {
+        // A photo-only MMS has an empty Body — allow it through as long as media is attached.
+        if (!fromNumber || (!messageBody && numMediaTop === 0)) {
             return new Response("Missing required fields", { status: 400 })
         }
 
         console.log(`Received SMS from ${fromNumber}: ${messageBody}`)
 
-        // 2. Identify the user by their phone number
-        const { data: user, error: userError } = await supabaseClient
-            .from('users')
-            .select('id')
-            .eq('phone', fromNumber)
-            .single()
+        // 2. Identify the user by phone, tolerant of formatting.
+        // Compare by the last 10 digits so +15125551234, 15125551234,
+        // 512-555-1234, (512) 555-1234, etc. all match.
+        const onlyDigits = (s: unknown) => (s ?? '').toString().replace(/\D/g, '');
+        const fromDigits = onlyDigits(fromNumber).slice(-10);
 
-        if (userError || !user) {
-            // We received a text from an unknown number. We should just ignore it.
+        let user: { id: string } | null = null;
+        if (fromDigits.length === 10) {
+            const { data: candidates } = await supabaseClient
+                .from('users')
+                .select('id, phone')
+                .not('phone', 'is', null);
+            user = (candidates || []).find((u: any) => onlyDigits(u.phone).slice(-10) === fromDigits) || null;
+        }
+
+        if (!user) {
+            // We received a text from an unrecognized number. Ignore it.
             console.error(`Received SMS from unknown number: ${fromNumber}`)
             return new Response("User not found", { status: 200 }) // Return 200 so Twilio doesn't retry
         }
@@ -96,65 +115,116 @@ serve(async (req) => {
             const hasMedia = numMedia > 0;
             const rawBody = messageBody.toString().trim();
             const isExpenseKeyword = /^expense\b/i.test(rawBody);
-            const amountMatch = rawBody.match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+            // Prefer a $-prefixed amount (e.g. $20.00) so a stray number in the description
+            // isn't misread; otherwise fall back to the first number in the message.
+            const amountMatch = rawBody.match(/\$\s*(\d+(?:\.\d{1,2})?)/) || rawBody.match(/(\d+(?:\.\d{1,2})?)/);
             const amount = amountMatch ? parseFloat(amountMatch[1]) : null;
-            const looksLikeExpense = isExpenseKeyword || (hasMedia && !!amount && amount > 0);
+            // Is this user mid-"EXPENSE" workflow (they texted EXPENSE and we asked for details)?
+            const { data: session } = await supabaseClient
+                .from('sms_expense_sessions')
+                .select('created_at, awaiting_receipt, pending_amount, pending_description')
+                .eq('user_id', user.id)
+                .maybeSingle();
+            const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+            const inWorkflow = !!session && (Date.now() - new Date(session.created_at).getTime() < SESSION_TTL_MS);
 
-            if (looksLikeExpense) {
-                const formatHelp = "To submit an expense, text the amount and a short description, and attach a photo of the receipt if you have one. Example: EXPENSE 25.00 gas for client visit.";
+            // Parse the description (strip the EXPENSE keyword and the amount token).
+            let description = rawBody;
+            if (isExpenseKeyword) description = description.replace(/^expense\b/i, '');
+            if (amountMatch) description = description.replace(amountMatch[0], '');
+            description = description.replace(/\s+/g, ' ').trim();
 
-                // Parse the description by stripping the keyword and the amount token.
-                let description = rawBody;
-                if (isExpenseKeyword) description = description.replace(/^expense\b/i, '');
-                if (amountMatch) description = description.replace(amountMatch[0], '');
-                description = description.replace(/\s+/g, ' ').trim();
+            const hasAmount = !!amount && amount > 0;
+            const isSkip = /^(no\b|no receipt|skip|file\b|without|submit)/i.test(rawBody);
+            const prompt = "Let's file your expense. In one message, reply with what it was for and the total amount, and attach a photo of the receipt (or a short note if you don't have one). Example: Parking Doctors Appointment $5.00";
+            const declineNote = " Note: expenses without a receipt may be declined for reimbursement at payroll review.";
 
-                if (!amount || amount <= 0) {
-                    replyText = `We couldn't find an amount in your message. ${formatHelp}`;
-                } else if (!hasMedia && !description) {
-                    replyText = `Please attach a photo of the receipt, or include a note explaining why there's no receipt. ${formatHelp}`;
-                } else {
-                    try {
-                        let receiptPath = null;
-                        let noReceiptReason = null;
+            // Upload an MMS receipt to storage and return its path.
+            const uploadReceipt = async () => {
+                const mediaUrl = formData.get('MediaUrl0')?.toString();
+                const mediaType = (formData.get('MediaContentType0') || 'image/jpeg').toString();
+                const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+                const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+                const mediaRes = await fetch(mediaUrl, {
+                    headers: { Authorization: 'Basic ' + btoa(`${accountSid}:${authToken}`) }
+                });
+                if (!mediaRes.ok) throw new Error(`Media fetch failed: ${mediaRes.status}`);
+                const mediaBytes = new Uint8Array(await mediaRes.arrayBuffer());
+                const ext = (mediaType.split('/')[1] || 'jpg').split(';')[0];
+                const path = `${user.id}/sms_${Date.now()}.${ext}`;
+                const { error: upErr } = await supabaseClient.storage
+                    .from('receipts')
+                    .upload(path, mediaBytes, { contentType: mediaType });
+                if (upErr) throw upErr;
+                return path;
+            };
 
-                        if (hasMedia) {
-                            const mediaUrl = formData.get('MediaUrl0')?.toString();
-                            const mediaType = (formData.get('MediaContentType0') || 'image/jpeg').toString();
-                            const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-                            const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-                            const mediaRes = await fetch(mediaUrl, {
-                                headers: { Authorization: 'Basic ' + btoa(`${accountSid}:${authToken}`) }
-                            });
-                            if (!mediaRes.ok) throw new Error(`Media fetch failed: ${mediaRes.status}`);
-                            const mediaBytes = new Uint8Array(await mediaRes.arrayBuffer());
-                            const ext = (mediaType.split('/')[1] || 'jpg').split(';')[0];
-                            receiptPath = `${user.id}/sms_${Date.now()}.${ext}`;
-                            const { error: upErr } = await supabaseClient.storage
-                                .from('receipts')
-                                .upload(receiptPath, mediaBytes, { contentType: mediaType });
-                            if (upErr) throw upErr;
-                        } else {
-                            // No photo: the caregiver's text serves as the no-receipt explanation.
-                            noReceiptReason = description;
+            // Insert the expense and clear the workflow session.
+            const fileExpense = async (amt: number, desc: string, receiptPath: string | null) => {
+                const { error: insErr } = await supabaseClient.from('expenses').insert({
+                    user_id: user.id,
+                    amount: amt,
+                    description: desc || 'Expense submitted via text',
+                    receipt_url: receiptPath,
+                    no_receipt_reason: receiptPath ? null : (desc || 'No receipt provided'),
+                    source: 'sms'
+                });
+                if (insErr) throw insErr;
+                await supabaseClient.from('sms_expense_sessions').delete().eq('user_id', user.id);
+            };
+
+            if (inWorkflow && session?.awaiting_receipt) {
+                // A pending expense is waiting for a receipt decision. Block new submissions
+                // until it's resolved (photo, NO, or CANCEL).
+                const amt = Number(session.pending_amount);
+                const desc = session.pending_description ?? '';
+                const isDiscard = /^(discard|void)\b/i.test(rawBody);
+                try {
+                    if (hasMedia) {
+                        const path = await uploadReceipt();
+                        await fileExpense(amt, desc, path);
+                        replyText = `Got it — $${amt.toFixed(2)} expense recorded with your receipt. It will be reviewed at the next payroll close.`;
+                    } else if (isSkip) {
+                        await fileExpense(amt, desc, null);
+                        replyText = `Got it — $${amt.toFixed(2)} expense recorded without a receipt.${declineNote}`;
+                    } else if (isDiscard) {
+                        await supabaseClient.from('sms_expense_sessions').delete().eq('user_id', user.id);
+                        replyText = `Discarded your pending expense ($${amt.toFixed(2)} for ${desc}). Text EXPENSE to start a new one.`;
+                    } else {
+                        replyText = `You have a pending expense: $${amt.toFixed(2)} for ${desc}. Reply with a photo of the receipt to attach it, reply NO to file it without a receipt, or reply DISCARD to discard it.`;
+                    }
+                } catch (expErr) {
+                    console.error('Failed to record SMS expense:', expErr);
+                    replyText = "Sorry, we couldn't save your expense. Please try again or submit it in the app.";
+                }
+            } else {
+                const isExpenseInteraction = isExpenseKeyword || inWorkflow || (hasMedia && hasAmount);
+                if (isExpenseInteraction) {
+                    if (!hasAmount) {
+                        // Not enough to file yet — start/continue the guided workflow.
+                        await supabaseClient.from('sms_expense_sessions')
+                            .upsert({ user_id: user.id, created_at: new Date().toISOString(), awaiting_receipt: false, pending_amount: null, pending_description: null });
+                        replyText = prompt;
+                    } else if (hasMedia) {
+                        // One-shot with a photo — file immediately.
+                        try {
+                            const path = await uploadReceipt();
+                            await fileExpense(amount as number, description, path);
+                            replyText = `Got it — $${(amount as number).toFixed(2)} expense recorded with your receipt. It will be reviewed at the next payroll close.`;
+                        } catch (expErr) {
+                            console.error('Failed to record SMS expense:', expErr);
+                            replyText = "Sorry, we couldn't save your expense. Please try again or submit it in the app.";
                         }
-
-                        const { error: insErr } = await supabaseClient.from('expenses').insert({
-                            user_id: user.id,
-                            amount,
-                            description: description || 'Expense submitted via text',
-                            receipt_url: receiptPath,
-                            no_receipt_reason: noReceiptReason,
-                            source: 'sms'
-                        });
-                        if (insErr) throw insErr;
-
-                        replyText = receiptPath
-                            ? `Got it — $${amount.toFixed(2)} expense recorded. It will be reviewed at the next payroll close.`
-                            : `Got it — $${amount.toFixed(2)} expense recorded without a receipt. It will be reviewed at the next payroll close.`;
-                    } catch (expErr) {
-                        console.error('Failed to record SMS expense:', expErr);
-                        replyText = "Sorry, we couldn't save your expense. Please try again or submit it in the app.";
+                    } else if (!description) {
+                        // Amount only — ask for a note + optional photo.
+                        await supabaseClient.from('sms_expense_sessions')
+                            .upsert({ user_id: user.id, created_at: new Date().toISOString(), awaiting_receipt: false, pending_amount: null, pending_description: null });
+                        replyText = "Got the amount. Please also reply with a short note of what it was for, and a photo of the receipt if you have one.";
+                    } else {
+                        // Amount + description, no photo — hold it and offer to attach a receipt.
+                        await supabaseClient.from('sms_expense_sessions')
+                            .upsert({ user_id: user.id, created_at: new Date().toISOString(), awaiting_receipt: true, pending_amount: amount, pending_description: description });
+                        replyText = `Almost there — this expense is NOT filed yet. $${(amount as number).toFixed(2)} for ${description}. To finish, reply with a photo of the receipt to attach it, reply NO to file it without a receipt, or reply DISCARD to discard it.${declineNote}`;
                     }
                 }
             }
