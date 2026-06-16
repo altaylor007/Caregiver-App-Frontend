@@ -32,11 +32,11 @@ serve(async (req) => {
         const onlyDigits = (s: unknown) => (s ?? '').toString().replace(/\D/g, '');
         const fromDigits = onlyDigits(fromNumber).slice(-10);
 
-        let user: { id: string } | null = null;
+        let user: { id: string; first_name?: string | null; full_name?: string | null } | null = null;
         if (fromDigits.length === 10) {
             const { data: candidates } = await supabaseClient
                 .from('users')
-                .select('id, phone')
+                .select('id, phone, first_name, full_name')
                 .not('phone', 'is', null);
             user = (candidates || []).find((u: any) => onlyDigits(u.phone).slice(-10) === fromDigits) || null;
         }
@@ -46,6 +46,8 @@ serve(async (req) => {
             console.error(`Received SMS from unknown number: ${fromNumber}`)
             return new Response("User not found", { status: 200 }) // Return 200 so Twilio doesn't retry
         }
+
+        const firstName = (user.first_name || (user.full_name ?? '').split(' ')[0] || 'there').toString().trim();
 
         // 3. Log the incoming message
         await supabaseClient.from('sms_logs').insert({
@@ -136,7 +138,7 @@ serve(async (req) => {
 
             const hasAmount = !!amount && amount > 0;
             const isSkip = /^(no\b|no receipt|skip|file\b|without|submit)/i.test(rawBody);
-            const prompt = "Let's file your expense. In one message, reply with what it was for and the total amount, and attach a photo of the receipt (or a short note if you don't have one). Example: Parking Doctors Appointment $5.00";
+            const prompt = `${firstName}, let's file your expense. In one message, reply with what it was for and the total amount, and attach a photo of the receipt (or a short note if you don't have one). Example: Parking Doctors Appointment $5.00`;
             const declineNote = " Note: expenses without a receipt may be declined for reimbursement at payroll review.";
 
             // Upload an MMS receipt to storage and return its path.
@@ -183,10 +185,10 @@ serve(async (req) => {
                     if (hasMedia) {
                         const path = await uploadReceipt();
                         await fileExpense(amt, desc, path);
-                        replyText = `Got it — $${amt.toFixed(2)} expense recorded with your receipt. It will be reviewed at the next payroll close.`;
+                        replyText = `Got it, ${firstName} — $${amt.toFixed(2)} expense recorded with your receipt. It will be reviewed at the next payroll close.`;
                     } else if (isSkip) {
                         await fileExpense(amt, desc, null);
-                        replyText = `Got it — $${amt.toFixed(2)} expense recorded without a receipt.${declineNote}`;
+                        replyText = `Got it, ${firstName} — $${amt.toFixed(2)} expense recorded without a receipt.${declineNote}`;
                     } else if (isDiscard) {
                         await supabaseClient.from('sms_expense_sessions').delete().eq('user_id', user.id);
                         replyText = `Discarded your pending expense ($${amt.toFixed(2)} for ${desc}). Text EXPENSE to start a new one.`;
@@ -210,7 +212,7 @@ serve(async (req) => {
                         try {
                             const path = await uploadReceipt();
                             await fileExpense(amount as number, description, path);
-                            replyText = `Got it — $${(amount as number).toFixed(2)} expense recorded with your receipt. It will be reviewed at the next payroll close.`;
+                            replyText = `Got it, ${firstName} — $${(amount as number).toFixed(2)} expense recorded with your receipt. It will be reviewed at the next payroll close.`;
                         } catch (expErr) {
                             console.error('Failed to record SMS expense:', expErr);
                             replyText = "Sorry, we couldn't save your expense. Please try again or submit it in the app.";
