@@ -119,6 +119,31 @@ const AdminSchedulePage = () => {
         const finalCustomName = bulkAssignedTo === 'custom' && bulkCustomName.trim() !== '' ? bulkCustomName.trim() : null;
         const isOpen = !finalAssignedTo && !finalCustomName;
 
+        if (finalAssignedTo) {
+            let conflictFound = null;
+            for (const shiftId of selectedShiftIds) {
+                const shiftObj = shifts.find(s => s.id === shiftId);
+                if (shiftObj) {
+                    const shiftStartLocal = formatShift(shiftObj.start_time, 'HH:mm');
+                    const shiftEndLocal = formatShift(shiftObj.end_time, 'HH:mm');
+                    const conflict = await checkUnavailabilityConflict(finalAssignedTo, shiftObj.date, shiftStartLocal, shiftEndLocal);
+                    if (conflict) {
+                        conflictFound = conflict;
+                        break;
+                    }
+                }
+            }
+            if (conflictFound) {
+                const confirmed = window.confirm(
+                    `⚠️ Availability conflict\n\n${conflictFound}\n\nDo you want to schedule anyway?`
+                );
+                if (!confirmed) {
+                    setBulkSubmitting(false);
+                    return;
+                }
+            }
+        }
+
         const payload = {
             assigned_to: finalAssignedTo,
             custom_assigned_name: finalCustomName,
@@ -401,6 +426,71 @@ const AdminSchedulePage = () => {
         setCurrentShift(null);
     };
 
+    const checkUnavailabilityConflict = async (userId, checkDate, startTimeStr, endTimeStr) => {
+        if (!userId) return null;
+
+        const overlapsMorning = startTimeStr < '12:00';
+        const overlapsEvening = endTimeStr > '12:00';
+
+        const { data: unavailabilityData, error: unavailabilityErr } = await supabase
+            .from('unavailability')
+            .select('type, start_date, end_date')
+            .eq('user_id', userId)
+            .lte('start_date', checkDate)
+            .gte('end_date', checkDate);
+
+        if (unavailabilityErr) {
+            console.error('Error fetching unavailability:', unavailabilityErr);
+        }
+
+        const caregiverName = caregivers.find(c => c.id === userId)?.full_name || 'This caregiver';
+
+        let formattedDate = checkDate;
+        try {
+            formattedDate = format(parseISO(checkDate), 'MMM d');
+        } catch (e) {
+            console.error(e);
+        }
+
+        if (unavailabilityData && unavailabilityData.length > 0) {
+            for (const row of unavailabilityData) {
+                let isConflict = false;
+                let typeStr = '';
+                if (row.type === 'full_day') {
+                    isConflict = true;
+                    typeStr = 'full day';
+                } else if (row.type === 'morning' && overlapsMorning) {
+                    isConflict = true;
+                    typeStr = 'morning';
+                } else if (row.type === 'evening' && overlapsEvening) {
+                    isConflict = true;
+                    typeStr = 'evening';
+                }
+
+                if (isConflict) {
+                    return `${caregiverName} marked themselves UNAVAILABLE (${typeStr}) on ${formattedDate}.`;
+                }
+            }
+        }
+
+        const { data: responseData, error: responseErr } = await supabase
+            .from('availability_responses')
+            .select('status')
+            .eq('user_id', userId)
+            .eq('date', checkDate)
+            .eq('status', 'unavailable');
+
+        if (responseErr) {
+            console.error('Error fetching availability responses:', responseErr);
+        }
+
+        if (responseData && responseData.length > 0) {
+            return `${caregiverName} marked themselves UNAVAILABLE (full day) on ${formattedDate}.`;
+        }
+
+        return null;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setFormError('');
@@ -413,13 +503,38 @@ const AdminSchedulePage = () => {
 
         // Warn if assigning someone who marked themselves unavailable
         if (finalAssignedTo) {
-            const availRecord = availabilityResponses.find(r => r.user_id === finalAssignedTo && r.date === date);
-            if (availRecord?.status === 'unavailable') {
-                const caregiverName = caregivers.find(c => c.id === finalAssignedTo)?.full_name || 'This caregiver';
-                const confirmed = window.confirm(
-                    `⚠️ Availability conflict\n\n${caregiverName} has marked themselves UNAVAILABLE on ${date}.\n\nDo you want to save this shift anyway ? `
-                );
-                if (!confirmed) return;
+            if (applyToWeek && !currentId) {
+                // Generate Sun-Sat for the week of the selected date
+                const baseDate = parseISO(date);
+                const dayOfWeek = baseDate.getDay();
+                const sunday = new Date(baseDate);
+                sunday.setDate(baseDate.getDate() - dayOfWeek);
+
+                let conflictFound = null;
+                for (let i = 0; i < 7; i++) {
+                    const shiftDate = new Date(sunday);
+                    shiftDate.setDate(sunday.getDate() + i);
+                    const shiftDateStr = format(shiftDate, 'yyyy-MM-dd');
+                    const conflict = await checkUnavailabilityConflict(finalAssignedTo, shiftDateStr, startTime, endTime);
+                    if (conflict) {
+                        conflictFound = conflict;
+                        break;
+                    }
+                }
+                if (conflictFound) {
+                    const confirmed = window.confirm(
+                        `⚠️ Availability conflict\n\n${conflictFound}\n\nDo you want to schedule anyway?`
+                    );
+                    if (!confirmed) return;
+                }
+            } else {
+                const conflict = await checkUnavailabilityConflict(finalAssignedTo, date, startTime, endTime);
+                if (conflict) {
+                    const confirmed = window.confirm(
+                        `⚠️ Availability conflict\n\n${conflict}\n\nDo you want to schedule anyway?`
+                    );
+                    if (!confirmed) return;
+                }
             }
         }
 
@@ -1238,6 +1353,15 @@ const AdminSchedulePage = () => {
                                                                                         key={shift.id}
                                                                                         onClick={async (e) => {
                                                                                             e.stopPropagation();
+                                                                                            const shiftStartLocal = formatShift(shift.start_time, 'HH:mm');
+                                                                                            const shiftEndLocal = formatShift(shift.end_time, 'HH:mm');
+                                                                                            const conflict = await checkUnavailabilityConflict(cg.id, shift.date, shiftStartLocal, shiftEndLocal);
+                                                                                            if (conflict) {
+                                                                                                const confirmed = window.confirm(
+                                                                                                    `⚠️ Availability conflict\n\n${conflict}\n\nDo you want to schedule anyway?`
+                                                                                                );
+                                                                                                if (!confirmed) return;
+                                                                                            }
                                                                                             const { error } = await supabase.from('shifts').update({ assigned_to: cg.id }).eq('id', shift.id);
                                                                                             if (!error) {
                                                                                                 setShifts(prevShifts => prevShifts.map(s => {
@@ -1497,6 +1621,15 @@ const AdminSchedulePage = () => {
                                                                                                             key={cg.id}
                                                                                                             onClick={async (e) => {
                                                                                                                 e.stopPropagation();
+                                                                                                                const shiftStartLocal = formatShift(shift.start_time, 'HH:mm');
+                                                                                                                const shiftEndLocal = formatShift(shift.end_time, 'HH:mm');
+                                                                                                                const conflict = await checkUnavailabilityConflict(cg.id, shift.date, shiftStartLocal, shiftEndLocal);
+                                                                                                                if (conflict) {
+                                                                                                                    const confirmed = window.confirm(
+                                                                                                                        `⚠️ Availability conflict\n\n${conflict}\n\nDo you want to schedule anyway?`
+                                                                                                                    );
+                                                                                                                    if (!confirmed) return;
+                                                                                                                }
                                                                                                                 const { error } = await supabase.from('shifts').update({ assigned_to: cg.id }).eq('id', shift.id);
                                                                                                                 if (!error) {
                                                                                                                     // Update local state instead of full data refetch to prevent UI flicker
