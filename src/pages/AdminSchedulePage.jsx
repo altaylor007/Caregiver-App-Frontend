@@ -1795,7 +1795,13 @@ const AdminSchedulePage = () => {
                                         type="date" 
                                         className="form-input" 
                                         value={broadcastPeriodStart} 
-                                        onChange={e => setBroadcastPeriodStart(e.target.value)} 
+                                        onChange={e => {
+                                            const newStart = e.target.value;
+                                            setBroadcastPeriodStart(newStart);
+                                            if (newStart) {
+                                                setBroadcastPeriodEnd(format(endOfMonth(parseISO(newStart)), 'yyyy-MM-dd'));
+                                            }
+                                        }} 
                                         required 
                                         disabled={broadcasting || !!broadcastStats}
                                     />
