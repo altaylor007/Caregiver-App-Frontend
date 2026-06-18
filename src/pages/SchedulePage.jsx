@@ -40,6 +40,73 @@ const SchedulePage = () => {
     const [showOnlyMyShifts, setShowOnlyMyShifts] = useState(false);
     const [printMode, setPrintMode] = useState(false); // 'full' | 'mine' | false
 
+    const [latestBroadcast, setLatestBroadcast] = useState(null);
+    const [showBroadcastBanner, setShowBroadcastBanner] = useState(false);
+
+    useEffect(() => {
+        const checkBroadcast = async () => {
+            if (!profile?.id) return;
+            try {
+                const { data: broadcasts, error: broadcastError } = await supabase
+                    .from('schedule_broadcasts')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                if (broadcastError) {
+                    console.error("Error fetching latest broadcast:", broadcastError);
+                    return;
+                }
+
+                if (broadcasts && broadcasts.length > 0) {
+                    const broadcast = broadcasts[0];
+                    setLatestBroadcast(broadcast);
+
+                    const { data: acks, error: ackError } = await supabase
+                        .from('schedule_acknowledgments')
+                        .select('*')
+                        .eq('broadcast_id', broadcast.id)
+                        .eq('user_id', profile.id);
+
+                    if (ackError) {
+                        console.error("Error checking acknowledgment:", ackError);
+                        return;
+                    }
+
+                    if (!acks || acks.length === 0) {
+                        setShowBroadcastBanner(true);
+                    }
+                }
+            } catch (err) {
+                console.error("Error in checkBroadcast:", err);
+            }
+        };
+
+        checkBroadcast();
+    }, [profile]);
+
+    const handleAcknowledgeBroadcast = async (status) => {
+        if (!latestBroadcast || !profile?.id) return;
+        try {
+            const { error } = await supabase
+                .from('schedule_acknowledgments')
+                .insert({
+                    broadcast_id: latestBroadcast.id,
+                    user_id: profile.id,
+                    status: status
+                });
+
+            if (error) {
+                console.error(`Error saving acknowledgment (${status}):`, error);
+                alert("Error saving acknowledgment: " + error.message);
+            } else {
+                setShowBroadcastBanner(false);
+            }
+        } catch (err) {
+            console.error("Error in handleAcknowledgeBroadcast:", err);
+        }
+    };
+
     const fetchSchedule = async () => {
         setLoading(true);
 
@@ -376,6 +443,23 @@ const SchedulePage = () => {
                     </div>
                 </div>
             </div>
+
+            {showBroadcastBanner && latestBroadcast && (
+                <div className="card no-print">
+                    <h3>{latestBroadcast.title}</h3>
+                    <p className="text-sm">{latestBroadcast.message}</p>
+                    <br />
+                    <div>
+                        <button onClick={() => handleAcknowledgeBroadcast('acknowledged')} className="btn btn-primary">
+                            Acknowledge
+                        </button>
+                        &nbsp;&nbsp;
+                        <button onClick={() => handleAcknowledgeBroadcast('flagged')} className="btn btn-outline">
+                            Flag
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {incomingTrades.length > 0 && (
                 <div className="no-print" style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-md)' }}>
