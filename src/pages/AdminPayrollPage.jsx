@@ -432,10 +432,14 @@ const PayrollReportView = () => {
             if (disabledRows.length > 0) {
                 const lines = disabledRows.map(r => {
                     const firstName = r.full_name.split(' ')[0];
-                    const amount = ((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0);
-                    const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
-                    const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
-                    return `${firstName}\n${r.total_hours} hours\n$${amount}${expLine}`;
+                    const fmt = n => Number.isInteger(n) ? `${n}` : n.toFixed(2);
+                    const pay = Math.round(((r.regular_hours * 30) + (r.holiday_hours * 45)) * 100) / 100;
+                    const reimb = Math.round((r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0) * 100) / 100;
+                    if (reimb > 0) {
+                        const total = Math.round((pay + reimb) * 100) / 100;
+                        return `${firstName}\nTotal due: $${fmt(total)}\n\n${r.total_hours} hours\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
+                    }
+                    return `${firstName}\n\n${r.total_hours} hours\n$${fmt(pay)}`;
                 }).join('\n\n');
                 smsBodyDisabled = `WE ${weDate}\n\n${lines}`;
             }
