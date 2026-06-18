@@ -33,6 +33,14 @@ const UpdatePasswordPage = () => {
         setLoading(true);
         setErrorMsg('');
 
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            setLoading(false);
+            alert('Your session has expired. Please log in again with the temporary password you were given, then set your new password right away.');
+            navigate('/auth');
+            return;
+        }
+
         try {
             // Format the phone number FIRST (assuming US if no country code provided)
             let formattedPhone = phone.trim();
