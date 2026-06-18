@@ -281,41 +281,69 @@ const AdminSchedulePage = () => {
         setBroadcastStats(null);
 
         try {
-            const { data, error } = await supabase.functions.invoke('send-schedule-broadcast', {
-                body: {
+            // Guard: the edge function rejects an empty period with a 400 — block it here first
+            if (!broadcastPeriodStart || !broadcastPeriodEnd) {
+                setBroadcastError("Please set both a start and end date before publishing.");
+                setBroadcasting(false);
+                return;
+            }
+
+            const { data: { user } } = await supabase.auth.getUser();
+            const { data: newBroadcast, error: insertError } = await supabase
+                .from('schedule_broadcasts')
+                .insert({
                     title: broadcastTitle,
                     message: broadcastMessage,
                     period_start: broadcastPeriodStart,
-                    period_end: broadcastPeriodEnd
+                    period_end: broadcastPeriodEnd,
+                    created_by: user?.id
+                })
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error("Insert error:", insertError);
+                setBroadcastError(insertError.message || "Failed to create schedule broadcast.");
+                setBroadcasting(false);
+                return;
+            }
+
+            // Format week string (e.g. "June 9 – June 15")
+            const weekLabel = `${format(parseISO(broadcastPeriodStart), 'MMMM d')} – ${format(parseISO(broadcastPeriodEnd), 'MMMM d')}`;
+
+            const { error: invokeError } = await supabase.functions.invoke('send-schedule-broadcast', {
+                body: {
+                    broadcastId: newBroadcast.id,
+                    periodStart: broadcastPeriodStart,
+                    periodEnd: broadcastPeriodEnd,
+                    weekLabel
                 }
             });
 
-            if (error) {
-                console.error("Broadcast invoke error:", error);
-                setBroadcastError(error.message || "Failed to send schedule broadcast.");
+            if (invokeError) {
+                await supabase.from('schedule_broadcasts').delete().eq('id', newBroadcast.id);
+                setBroadcastError("Couldn't send the schedule notification. Please try again.");
                 setBroadcasting(false);
-            } else if (data && data.error) {
-                console.error("Broadcast function error:", data.error);
-                setBroadcastError(data.error);
-                setBroadcasting(false);
-            } else {
-                setBroadcastStats({
-                    notified: data.notified,
-                    sms_sent: data.sms_sent
-                });
-                
-                await fetchAckData();
-                await fetchData();
-
-                setTimeout(() => {
-                    setIsBroadcastModalOpen(false);
-                    setBroadcasting(false);
-                    setBroadcastStats(null);
-                }, 2500);
+                return;
             }
+
+            // Set state to show successful response UI
+            setBroadcastStats({
+                notified: activeCaregivers.length,
+                sms_sent: activeCaregivers.filter(cg => cg.sms_enabled).length
+            });
+            
+            await fetchAckData();
+            await fetchData();
+
+            setTimeout(() => {
+                setIsBroadcastModalOpen(false);
+                setBroadcasting(false);
+                setBroadcastStats(null);
+            }, 2500);
         } catch (err) {
-            console.error("Broadcast network error:", err);
-            setBroadcastError(err.message || "An unexpected network error occurred.");
+            console.error("Broadcast error:", err);
+            setBroadcastError(err.message || "An unexpected error occurred.");
             setBroadcasting(false);
         }
     };

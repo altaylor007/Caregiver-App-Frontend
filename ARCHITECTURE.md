@@ -929,6 +929,10 @@ All are children of `/` which renders `MainLayout`.
 | `TWILIO_ACCOUNT_SID` | Yes (for SMS) | Set via Supabase Dashboard → Edge Functions → Secrets |
 | `TWILIO_AUTH_TOKEN` | Yes (for SMS) | |
 | `TWILIO_PHONE_NUMBER` | Yes (for SMS) | E.164 format: `+15551234567` |
+| `TWILIO_API_KEY_SID` | Yes (for send-schedule-broadcast) | Twilio API Key SID; set via Dashboard → Edge Functions → Secrets. |
+| `TWILIO_API_KEY_SECRET` | Yes (for send-schedule-broadcast) | Twilio API Key Secret. |
+
+> **Note:** The `send-schedule-broadcast` function authenticates to Twilio using the API Key (`TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET`) pair, whereas the `send-sms` function uses the account's primary `TWILIO_AUTH_TOKEN`. Both are valid Twilio authentication methods, but they are not interchangeable.
 
 ---
 
