@@ -80,15 +80,21 @@ serve(async (req) => {
 
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
     const twilioPhoneNumber = Deno.env.get('TWILIO_PHONE_NUMBER')
+    const twilioApiKeySid = Deno.env.get('TWILIO_API_KEY_SID')
+    const twilioApiKeySecret = Deno.env.get('TWILIO_API_KEY_SECRET')
 
-    if (!twilioAccountSid || !twilioPhoneNumber) {
+    if (!twilioAccountSid || !twilioPhoneNumber || !twilioApiKeySid || !twilioApiKeySecret) {
       return new Response(JSON.stringify({ error: "Twilio credentials missing" }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    const { broadcastId, periodStart, periodEnd } = await req.json()
+    const reqBody = await req.json()
+    // Accept both camelCase (repo frontend) and snake_case (currently-deployed frontend)
+    const broadcastId = reqBody.broadcastId ?? reqBody.broadcast_id
+    const periodStart = reqBody.periodStart ?? reqBody.period_start
+    const periodEnd = reqBody.periodEnd ?? reqBody.period_end
 
     if (!periodStart || !periodEnd) {
       return new Response(JSON.stringify({ error: "Missing periodStart or periodEnd" }), {
@@ -98,7 +104,11 @@ serve(async (req) => {
     }
 
     const weekLabel = getWeekLabel(periodStart, periodEnd)
-    const messageBody = `Agnes Care Team: Your schedule for ${weekLabel} has been published. View and acknowledge it here: https://radiant-yeot-a82a87.netlify.app/`
+    const ackLink = 'https://radiant-yeot-a82a87.netlify.app/'
+    const customMessage = (reqBody.message ?? '').trim()
+    const messageBody = customMessage
+      ? `${customMessage} View and acknowledge here: ${ackLink}`
+      : `Agnes Care Team: Your schedule for ${weekLabel} has been published. View and acknowledge it here: ${ackLink}`
 
 
     const supabaseServiceKey = Deno.env.get('SERVICE_ROLE_JWT') ?? ''
@@ -143,7 +153,7 @@ serve(async (req) => {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
-              'Authorization': 'Basic ' + btoa(`${Deno.env.get('TWILIO_API_KEY_SID')}:${Deno.env.get('TWILIO_API_KEY_SECRET')}`)
+              'Authorization': 'Basic ' + btoa(`${twilioApiKeySid}:${twilioApiKeySecret}`)
             },
             body: body.toString()
           })
@@ -182,9 +192,10 @@ serve(async (req) => {
       failed = smsResults.length - sent
     }
 
+    const noneSent = users && users.length > 0 && sent === 0
     return new Response(JSON.stringify({ sent, failed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200
+      status: noneSent ? 502 : 200
     })
 
   } catch (err) {

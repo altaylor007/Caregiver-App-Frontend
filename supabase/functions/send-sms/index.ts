@@ -2,8 +2,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
-const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN')
 const twilioPhoneNumber = Deno.env.get('TWILIO_PHONE_NUMBER')
+const twilioApiKeySid = Deno.env.get('TWILIO_API_KEY_SID')
+const twilioApiKeySecret = Deno.env.get('TWILIO_API_KEY_SECRET')
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -14,6 +15,13 @@ serve(async (req) => {
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
+    }
+
+    if (!twilioAccountSid || !twilioPhoneNumber || !twilioApiKeySid || !twilioApiKeySecret) {
+        return new Response(JSON.stringify({ error: "Twilio credentials missing" }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
     }
 
     const authHeader = req.headers.get('Authorization')
@@ -86,7 +94,7 @@ serve(async (req) => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`)
+                'Authorization': 'Basic ' + btoa(`${twilioApiKeySid}:${twilioApiKeySecret}`)
             },
             body: body.toString()
         })
