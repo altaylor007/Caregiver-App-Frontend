@@ -10,6 +10,9 @@ const supabaseClient = createClient(
     { auth: { persistSession: false, autoRefreshToken: false } }
 )
 
+// "Trade Shifts" message_topics row
+const TRADE_SHIFTS_TOPIC_ID = '03638cf4-dfb4-4dec-9407-6c27e937ec6a';
+
 serve(async (req) => {
     try {
         // 1. Twilio sends data as URL Encoded Form Data, not JSON
@@ -72,6 +75,7 @@ serve(async (req) => {
                 .from('shift_trades')
                 .select('*')
                 .eq('proposed_to', user.id)
+                // Only allow pending trades to be accepted via SMS replies
                 .eq('status', 'pending');
 
             // Find the precise shift trade via the unique SMS code
@@ -103,7 +107,8 @@ serve(async (req) => {
                     // You might also insert a record into the `messages` table so the manager sees it in real-time
                     await supabaseClient.from('messages').insert({
                         author_id: user.id, // Caregiver who accepted
-                        content: `I have replied YES via SMS to accept the shift trade request.`
+                        content: `I have replied YES via SMS to accept the shift trade request.`,
+                        topic_id: TRADE_SHIFTS_TOPIC_ID
                     })
                 }
             } else {

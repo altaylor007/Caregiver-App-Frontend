@@ -39,6 +39,11 @@ const AdminSchedulePage = () => {
     const [broadcastAcks, setBroadcastAcks] = useState([]);
     const [activeCaregivers, setActiveCaregivers] = useState([]);
 
+    const [archivedBroadcasts, setArchivedBroadcasts] = useState([]);
+    const [expandedArchivedId, setExpandedArchivedId] = useState(null);
+    const [archivedAcksMap, setArchivedAcksMap] = useState({});
+    const [loadingArchivedAcksId, setLoadingArchivedAcksId] = useState(null);
+
     // Initialize view mode from URL to persist across reloads
     const [viewMode, setViewModeState] = useState(() => {
         const params = new URLSearchParams(window.location.search);
@@ -259,9 +264,9 @@ const AdminSchedulePage = () => {
 
             if (broadcastErr) throw broadcastErr;
             const latest = broadcastData && broadcastData.length > 0 ? broadcastData[0] : null;
-            setLatestBroadcast(latest);
 
-            if (latest) {
+            if (latest && latest.status === 'active') {
+                setLatestBroadcast(latest);
                 const { data: acksData, error: acksErr } = await supabase
                     .from('schedule_acknowledgments')
                     .select('*, users(id, first_name, last_name, full_name)')
@@ -270,6 +275,7 @@ const AdminSchedulePage = () => {
                 if (acksErr) throw acksErr;
                 setBroadcastAcks(acksData || []);
             } else {
+                setLatestBroadcast(null);
                 setBroadcastAcks([]);
             }
 
@@ -284,6 +290,16 @@ const AdminSchedulePage = () => {
 
             if (cgErr) throw cgErr;
             setActiveCaregivers(activeCGData || []);
+
+            // Fetch archived broadcasts
+            const { data: archivedData, error: archivedErr } = await supabase
+                .from('schedule_broadcasts')
+                .select('*')
+                .eq('status', 'archived')
+                .order('created_at', { ascending: false });
+
+            if (archivedErr) throw archivedErr;
+            setArchivedBroadcasts(archivedData || []);
         } catch (err) {
             console.error("Error fetching acknowledgment data:", err);
         }
@@ -370,6 +386,80 @@ const AdminSchedulePage = () => {
             console.error("Broadcast error:", err);
             setBroadcastError(err.message || "An unexpected error occurred.");
             setBroadcasting(false);
+        }
+    };
+
+    const handleWithdrawBroadcast = async () => {
+        if (!latestBroadcast) return;
+        const confirmed = window.confirm(`This will withdraw the broadcast and permanently discard ${broadcastAcks.length} collected acknowledgement(s). Continue?`);
+        if (!confirmed) return;
+
+        try {
+            const { error: updateError } = await supabase
+                .from('schedule_broadcasts')
+                .update({ status: 'withdrawn' })
+                .eq('id', latestBroadcast.id);
+            if (updateError) throw updateError;
+
+            const { error: deleteError } = await supabase
+                .from('schedule_acknowledgments')
+                .delete()
+                .eq('broadcast_id', latestBroadcast.id);
+            if (deleteError) throw deleteError;
+
+            await fetchAckData();
+        } catch (err) {
+            console.error("Error withdrawing broadcast:", err);
+            alert(err.message || "Failed to withdraw broadcast.");
+        }
+    };
+
+    const handleArchiveBroadcast = async () => {
+        if (!latestBroadcast) return;
+        const confirmed = window.confirm(`Archive this broadcast? The banner will be hidden but its acknowledgement record is kept.`);
+        if (!confirmed) return;
+
+        try {
+            const { error: updateError } = await supabase
+                .from('schedule_broadcasts')
+                .update({ status: 'archived' })
+                .eq('id', latestBroadcast.id);
+            if (updateError) throw updateError;
+
+            await fetchAckData();
+        } catch (err) {
+            console.error("Error archiving broadcast:", err);
+            alert(err.message || "Failed to archive broadcast.");
+        }
+    };
+
+    const handleToggleExpandArchived = async (broadcastId) => {
+        if (expandedArchivedId === broadcastId) {
+            setExpandedArchivedId(null);
+            return;
+        }
+
+        setExpandedArchivedId(broadcastId);
+
+        if (!archivedAcksMap[broadcastId]) {
+            setLoadingArchivedAcksId(broadcastId);
+            try {
+                const { data: acksData, error: acksErr } = await supabase
+                    .from('schedule_acknowledgments')
+                    .select('*, users(id, first_name, last_name, full_name)')
+                    .eq('broadcast_id', broadcastId);
+
+                if (acksErr) throw acksErr;
+                setArchivedAcksMap(prev => ({
+                    ...prev,
+                    [broadcastId]: acksData || []
+                }));
+            } catch (err) {
+                console.error("Error fetching archived acknowledgments:", err);
+                alert(err.message || "Failed to load acknowledgments.");
+            } finally {
+                setLoadingArchivedAcksId(null);
+            }
         }
     };
 
@@ -893,7 +983,7 @@ const AdminSchedulePage = () => {
             {/* Schedule Acknowledgment Status Panel */}
             {latestBroadcast && (
                 <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
                         <div>
                             <h3 style={{ margin: 0, color: 'var(--neutral-900)', fontSize: '1.1rem', fontWeight: 600 }}>
                                 {latestBroadcast.title}
@@ -902,8 +992,28 @@ const AdminSchedulePage = () => {
                                 📅 Period: {format(parseISO(latestBroadcast.period_start), 'MMM d, yyyy')} to {format(parseISO(latestBroadcast.period_end), 'MMM d, yyyy')}
                             </div>
                         </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--neutral-500)', textAlign: 'right' }}>
-                            Sent: {format(parseISO(latestBroadcast.created_at), 'MMM d, yyyy h:mm a')}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--neutral-500)', textAlign: 'right' }}>
+                                Sent: {format(parseISO(latestBroadcast.created_at), 'MMM d, yyyy h:mm a')}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    onClick={handleWithdrawBroadcast}
+                                    className="btn btn-outline text-danger"
+                                    style={{ minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', padding: '0.25rem 0.75rem' }}
+                                >
+                                    Withdraw
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleArchiveBroadcast}
+                                    className="btn btn-secondary"
+                                    style={{ minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', padding: '0.25rem 0.75rem' }}
+                                >
+                                    Archive
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -968,6 +1078,140 @@ const AdminSchedulePage = () => {
 
                     <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--neutral-700)', borderTop: '1px solid var(--neutral-200)', paddingTop: '0.75rem' }}>
                         {acknowledgedList.length} acknowledged · {flaggedList.length} flagged · {noResponseList.length} no response
+                    </div>
+                </div>
+            )}
+
+            {/* Acknowledgement History Section */}
+            {archivedBroadcasts.length > 0 && (
+                <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <h3 style={{ margin: 0, marginBottom: '1rem', color: 'var(--neutral-900)', fontSize: '1.1rem', fontWeight: 600 }}>
+                        Acknowledgement History
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {archivedBroadcasts.map(broadcast => {
+                            const isExpanded = expandedArchivedId === broadcast.id;
+                            const isLoadingAcks = loadingArchivedAcksId === broadcast.id;
+                            const broadcastAcks = archivedAcksMap[broadcast.id] || [];
+
+                            // Compute Acknowledgment Groups for this archived broadcast
+                            const ackList = [];
+                            const flagList = [];
+                            const noRespList = [];
+
+                            if (isExpanded && !isLoadingAcks) {
+                                activeCaregivers.forEach(cg => {
+                                    const ack = broadcastAcks.find(a => a.user_id === cg.id);
+                                    if (ack) {
+                                        if (ack.status === 'acknowledged') {
+                                            ackList.push(cg);
+                                        } else if (ack.status === 'flagged') {
+                                            flagList.push(cg);
+                                        }
+                                    } else {
+                                        noRespList.push(cg);
+                                    }
+                                });
+                            }
+
+                            return (
+                                <div key={broadcast.id} style={{ border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-sm)', backgroundColor: 'white', overflow: 'hidden' }}>
+                                    <div 
+                                        onClick={() => handleToggleExpandArchived(broadcast.id)}
+                                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', cursor: 'pointer', backgroundColor: isExpanded ? 'var(--neutral-100)' : 'transparent', transition: 'background-color 0.2s' }}
+                                    >
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--neutral-800)' }}>
+                                                {broadcast.title}
+                                            </div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--neutral-600)', marginTop: '0.2rem' }}>
+                                                📅 Period: {format(parseISO(broadcast.period_start), 'MMM d, yyyy')} to {format(parseISO(broadcast.period_end), 'MMM d, yyyy')}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--neutral-400)' }}>
+                                                Sent: {format(parseISO(broadcast.created_at), 'MMM d, yyyy')}
+                                            </span>
+                                            <span style={{ fontWeight: 'bold', fontSize: '1rem', color: 'var(--neutral-500)' }}>
+                                                {isExpanded ? '−' : '+'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {isExpanded && (
+                                        <div style={{ padding: '1rem', borderTop: '1px solid var(--neutral-200)', backgroundColor: 'var(--neutral-50)' }}>
+                                            {isLoadingAcks ? (
+                                                <div style={{ fontSize: '0.85rem', color: 'var(--neutral-500)', fontStyle: 'italic' }}>Loading responses...</div>
+                                            ) : (
+                                                <div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '1.25rem' }}>
+                                                        {/* Acknowledged Column */}
+                                                        <div style={{ backgroundColor: 'var(--success-50)', border: '1px solid var(--success-200)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                                                            <h4 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--success-800)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--success-500)' }}></span>
+                                                                Acknowledged ({ackList.length})
+                                                            </h4>
+                                                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                                                {ackList.length === 0 ? (
+                                                                    <li style={{ color: 'var(--success-600)', fontSize: '0.75rem', fontStyle: 'italic' }}>None</li>
+                                                                ) : (
+                                                                    ackList.map(cg => (
+                                                                        <li key={cg.id} style={{ fontSize: '0.8rem', color: 'var(--success-900)' }}>
+                                                                            {cg.full_name || `${cg.first_name || ''} ${cg.last_name || ''}`.trim() || 'Caregiver'}
+                                                                        </li>
+                                                                    ))
+                                                                )}
+                                                            </ul>
+                                                        </div>
+
+                                                        {/* Flagged Column */}
+                                                        <div style={{ backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                                                            <h4 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--warning-800)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--warning-500)' }}></span>
+                                                                Flagged a Shift ({flagList.length})
+                                                            </h4>
+                                                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                                                {flagList.length === 0 ? (
+                                                                    <li style={{ color: 'var(--warning-600)', fontSize: '0.75rem', fontStyle: 'italic' }}>None</li>
+                                                                ) : (
+                                                                    flagList.map(cg => (
+                                                                        <li key={cg.id} style={{ fontSize: '0.8rem', color: 'var(--warning-900)' }}>
+                                                                            {cg.full_name || `${cg.first_name || ''} ${cg.last_name || ''}`.trim() || 'Caregiver'}
+                                                                        </li>
+                                                                    ))
+                                                                )}
+                                                            </ul>
+                                                        </div>
+
+                                                        {/* No Response Column */}
+                                                        <div style={{ backgroundColor: 'var(--neutral-100)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                                                            <h4 style={{ margin: 0, marginBottom: '0.5rem', color: 'var(--neutral-800)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', fontWeight: 600 }}>
+                                                                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--neutral-400)' }}></span>
+                                                                No Response ({noRespList.length})
+                                                            </h4>
+                                                            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                                                {noRespList.length === 0 ? (
+                                                                    <li style={{ color: 'var(--neutral-600)', fontSize: '0.75rem', fontStyle: 'italic' }}>None</li>
+                                                                ) : (
+                                                                    noRespList.map(cg => (
+                                                                        <li key={cg.id} style={{ fontSize: '0.8rem', color: 'var(--neutral-700)' }}>
+                                                                            {cg.full_name || `${cg.first_name || ''} ${cg.last_name || ''}`.trim() || 'Caregiver'}
+                                                                        </li>
+                                                                    ))
+                                                                )}
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--neutral-700)', borderTop: '1px solid var(--neutral-200)', paddingTop: '0.5rem' }}>
+                                                        {ackList.length} acknowledged · {flagList.length} flagged · {noRespList.length} no response
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}

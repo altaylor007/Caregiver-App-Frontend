@@ -60,23 +60,28 @@ const SchedulePage = () => {
 
                 if (broadcasts && broadcasts.length > 0) {
                     const broadcast = broadcasts[0];
-                    setLatestBroadcast(broadcast);
 
-                    const { data: acks, error: ackError } = await supabase
-                        .from('schedule_acknowledgments')
-                        .select('*')
-                        .eq('broadcast_id', broadcast.id)
-                        .eq('user_id', profile.id);
+                    if (broadcast.status === 'active') {
+                        const { data: acks, error: ackError } = await supabase
+                            .from('schedule_acknowledgments')
+                            .select('*')
+                            .eq('broadcast_id', broadcast.id)
+                            .eq('user_id', profile.id);
 
-                    if (ackError) {
-                        console.error("Error checking acknowledgment:", ackError);
-                        return;
-                    }
+                        if (ackError) {
+                            console.error("Error checking acknowledgment:", ackError);
+                            return;
+                        }
 
-                    if (!acks || acks.length === 0) {
-                        setShowBroadcastBanner(true);
+                        if (!acks || acks.length === 0) {
+                            setLatestBroadcast(broadcast);
+                            setShowBroadcastBanner(true);
+                            return;
+                        }
                     }
                 }
+                setLatestBroadcast(null);
+                setShowBroadcastBanner(false);
             } catch (err) {
                 console.error("Error in checkBroadcast:", err);
             }
@@ -165,10 +170,16 @@ const SchedulePage = () => {
             .eq('status', 'pending');
 
         if (outgoingRes.data && outgoingRes.data.length > 0) {
-            const proposedToIds = [...new Set(outgoingRes.data.map(t => t.proposed_to))];
-            let proposedToUsersQuery = supabase.from('users').select('id, full_name, first_name').in('id', proposedToIds);
-            if (!import.meta.env.DEV) proposedToUsersQuery = proposedToUsersQuery.eq('is_test_account', false);
-            const { data: proposedToUsers } = await proposedToUsersQuery;
+            const proposedToIds = [...new Set(outgoingRes.data.map(t => t.proposed_to).filter(Boolean))];
+            let proposedToUsers = [];
+            
+            if (proposedToIds.length > 0) {
+                let proposedToUsersQuery = supabase.from('users').select('id, full_name, first_name').in('id', proposedToIds);
+                if (!import.meta.env.DEV) proposedToUsersQuery = proposedToUsersQuery.eq('is_test_account', false);
+                const { data } = await proposedToUsersQuery;
+                if (data) proposedToUsers = data;
+            }
+
             const enrichedOutgoing = outgoingRes.data.map(t => ({
                 ...t,
                 proposed_to_name: proposedToUsers?.find(u => u.id === t.proposed_to)?.first_name || proposedToUsers?.find(u => u.id === t.proposed_to)?.full_name || 'a caregiver'
@@ -287,6 +298,23 @@ const SchedulePage = () => {
         }
     };
 
+    const handleCancelTrade = async (tradeId) => {
+        if (!window.confirm("Cancel this trade request?")) return;
+        try {
+            const { error } = await supabase
+                .from('shift_trades')
+                .update({ status: 'cancelled' })
+                .eq('id', tradeId)
+                .eq('requested_by', user.id)
+                .eq('status', 'pending');
+
+            if (error) throw error;
+            fetchSchedule();
+        } catch (error) {
+            alert("Error cancelling request: " + error.message);
+        }
+    };
+
     const handleRequestCoverage = (shift) => {
         setShiftForCoverage(shift);
         setCoverageNote('');
@@ -314,9 +342,13 @@ const SchedulePage = () => {
                 messageContent += ` Note: ${coverageNote.trim()}`;
             }
 
+            // "Trade Shifts" message_topics row — coverage requests post here
+            const TRADE_SHIFTS_TOPIC_ID = '03638cf4-dfb4-4dec-9407-6c27e937ec6a';
+
             const { error: msgErr } = await supabase.from('messages').insert({
                 author_id: profile?.id || user.id,
-                content: messageContent
+                content: messageContent,
+                topic_id: TRADE_SHIFTS_TOPIC_ID
             });
             if (msgErr) throw msgErr;
 
@@ -669,15 +701,25 @@ const SchedulePage = () => {
                                                             if (pendingTrade) {
                                                                 if (pendingTrade.proposed_to) {
                                                                     return (
-                                                                        <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
-                                                                            ⏳ Pending trade with {pendingTrade.proposed_to_name}
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                                                            <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
+                                                                                ⏳ Pending trade with {pendingTrade.proposed_to_name}
+                                                                            </div>
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleCancelTrade(pendingTrade.id); }} className="btn btn-outline text-danger no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                Cancel request
+                                                                            </button>
                                                                         </div>
                                                                     );
                                                                 } else {
                                                                     return (
-                                                                        <button disabled className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', marginTop: '0.25rem', cursor: 'not-allowed', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                            Coverage Requested
-                                                                        </button>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                                                            <button disabled className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', cursor: 'not-allowed', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                Coverage Requested
+                                                                            </button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); handleCancelTrade(pendingTrade.id); }} className="btn btn-outline text-danger no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                Cancel request
+                                                                            </button>
+                                                                        </div>
                                                                     );
                                                                 }
                                                             } else {
@@ -773,15 +815,25 @@ const SchedulePage = () => {
                                                                 if (pendingTrade) {
                                                                     if (pendingTrade.proposed_to) {
                                                                         return (
-                                                                            <div style={{ marginTop: '0.25rem', fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
-                                                                                ⏳ Pending trade with {pendingTrade.proposed_to_name}
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                                                                <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--warning-700)', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-300)', borderRadius: '4px', padding: '0.25rem 0.4rem', textAlign: 'center', lineHeight: 1.3 }}>
+                                                                                    ⏳ Pending trade with {pendingTrade.proposed_to_name}
+                                                                                </div>
+                                                                                <button onClick={(e) => { e.stopPropagation(); handleCancelTrade(pendingTrade.id); }} className="btn btn-outline text-danger no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                    Cancel request
+                                                                                </button>
                                                                             </div>
                                                                         );
                                                                     } else {
                                                                         return (
-                                                                            <button disabled className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', marginTop: '0.25rem', cursor: 'not-allowed', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                Coverage Requested
-                                                                            </button>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                                                                <button disabled className="btn btn-outline no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', cursor: 'not-allowed', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                    Coverage Requested
+                                                                                </button>
+                                                                                <button onClick={(e) => { e.stopPropagation(); handleCancelTrade(pendingTrade.id); }} className="btn btn-outline text-danger no-print" style={{ fontSize: '0.7rem', minHeight: '44px', padding: '0.2rem', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                    Cancel request
+                                                                                </button>
+                                                                            </div>
                                                                         );
                                                                     }
                                                                 } else {

@@ -63,7 +63,7 @@ const DashboardPage = () => {
 
                     const latest = broadcasts && broadcasts.length > 0 ? broadcasts[0] : null;
 
-                    if (latest) {
+                    if (latest && latest.status === 'active') {
                         // Check if acknowledged
                         const { data: acks, error: ackErr } = await supabase
                             .from('schedule_acknowledgments')
