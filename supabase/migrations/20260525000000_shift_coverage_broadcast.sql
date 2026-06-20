@@ -35,8 +35,13 @@ BEGIN
         RAISE EXCEPTION 'Trade request not found';
     END IF;
 
-    -- Validate status is pending and proposed_to is NULL (broadcast request)
-    IF v_trade.proposed_to IS NOT NULL OR v_trade.status != 'pending' THEN
+    -- Validate status is pending
+    IF v_trade.status != 'pending' THEN
+        RAISE EXCEPTION 'Trade is no longer pending';
+    END IF;
+
+    -- Validate proposed_to is NULL (broadcast request)
+    IF v_trade.proposed_to IS NOT NULL THEN
         RAISE EXCEPTION 'Trade request is already claimed or not pending';
     END IF;
 

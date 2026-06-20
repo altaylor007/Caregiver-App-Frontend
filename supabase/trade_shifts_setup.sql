@@ -39,7 +39,7 @@ BEGIN
     END IF;
 
     IF v_trade.status != 'pending' THEN
-        RAISE EXCEPTION 'Trade is not pending';
+        RAISE EXCEPTION 'Trade is no longer pending';
     END IF;
 
     -- Update the trade status
