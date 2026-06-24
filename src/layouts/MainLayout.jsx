@@ -95,6 +95,8 @@ const MainLayout = () => {
         setShowNotifications(false);
         if (notif.type === 'document') {
             navigate('/documents');
+        } else if (notif.type === 'shift_trade') {
+            navigate('/admin/schedule');
         } else {
             // Find reference_id to open the specific thread
             if (notif.reference_id) {
@@ -194,12 +196,27 @@ const MainLayout = () => {
                                     <div
                                         key={n.id}
                                         onClick={() => markAsRead(n)}
-                                        style={{ padding: '0.5rem', cursor: 'pointer', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--primary-50)' }}
+                                        style={{ 
+                                            padding: '0.5rem', 
+                                            cursor: 'pointer', 
+                                            borderRadius: 'var(--radius-sm)', 
+                                            backgroundColor: 'var(--primary-50)',
+                                            ...(n.type === 'shift_trade' ? { display: 'flex', alignItems: 'center', gap: '0.5rem' } : {})
+                                        }}
                                     >
-                                        <p className="text-sm">
-                                            <span style={{ fontWeight: 600 }}>{n.actor?.full_name || 'Someone'}</span>
-                                            {n.type === 'mention' ? ' tagged you in a message.' : ' uploaded a new document.'}
-                                        </p>
+                                        {n.type === 'shift_trade' ? (
+                                            <>
+                                                <Calendar size={16} className="text-primary" style={{ flexShrink: 0 }} />
+                                                <p className="text-sm" style={{ margin: 0 }}>
+                                                    A shift coverage was accepted — schedule updated.
+                                                </p>
+                                            </>
+                                        ) : (
+                                            <p className="text-sm" style={{ margin: 0 }}>
+                                                <span style={{ fontWeight: 600 }}>{n.actor?.full_name || 'Someone'}</span>
+                                                {n.type === 'mention' ? ' tagged you in a message.' : ' uploaded a new document.'}
+                                            </p>
+                                        )}
                                     </div>
                                 ))
                             )}
