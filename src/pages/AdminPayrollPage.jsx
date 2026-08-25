@@ -435,11 +435,14 @@ const PayrollReportView = () => {
                     const fmt = n => Number.isInteger(n) ? `${n}` : n.toFixed(2);
                     const pay = Math.round(((r.regular_hours * 30) + (r.holiday_hours * 45)) * 100) / 100;
                     const reimb = Math.round((r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0) * 100) / 100;
+                    const hoursLine = r.holiday_hours > 0
+                        ? `${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`
+                        : `${r.total_hours} hours`;
                     if (reimb > 0) {
                         const total = Math.round((pay + reimb) * 100) / 100;
-                        return `${firstName}\nTotal due: $${fmt(total)}\n\n${r.total_hours} hours\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
+                        return `${firstName}\nTotal due: $${fmt(total)}\n\n${hoursLine}\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
                     }
-                    return `${firstName}\n\n${r.total_hours} hours\n$${fmt(pay)}`;
+                    return `${firstName}\n\n${hoursLine}\n$${fmt(pay)}`;
                 }).join('\n\n');
                 smsBodyDisabled = `WE ${weDate}\n\n${lines}`;
             }
@@ -651,9 +654,18 @@ const PayrollReportView = () => {
                                                      if (disabledRows.length === 0) return 'No caregivers in this group.';
                                                      const weDate = format(parseISO(previewData.end_date), 'MM-dd');
                                                      const lines = disabledRows.map(r => {
-                                                         const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
-                                                         const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
-                                                         return `${r.full_name.split(' ')[0]}\n${r.total_hours} hours\n$${((r.regular_hours * 30) + (r.holiday_hours * 45)).toFixed(0)}${expLine}`;
+                                                         const firstName = r.full_name.split(' ')[0];
+                                                         const fmt = n => Number.isInteger(n) ? `${n}` : n.toFixed(2);
+                                                         const pay = Math.round(((r.regular_hours * 30) + (r.holiday_hours * 45)) * 100) / 100;
+                                                         const reimb = Math.round((r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0) * 100) / 100;
+                                                         const hoursLine = r.holiday_hours > 0
+                                                             ? `${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`
+                                                             : `${r.total_hours} hours`;
+                                                         if (reimb > 0) {
+                                                             const total = Math.round((pay + reimb) * 100) / 100;
+                                                             return `${firstName}\nTotal due: $${fmt(total)}\n\n${hoursLine}\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
+                                                         }
+                                                         return `${firstName}\n\n${hoursLine}\n$${fmt(pay)}`;
                                                      }).join('\n\n');
                                                      return `WE ${weDate}\n\n${lines}`;
                                                  })()}
