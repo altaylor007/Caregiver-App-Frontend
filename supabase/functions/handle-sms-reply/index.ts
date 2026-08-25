@@ -100,6 +100,85 @@ serve(async (req) => {
                 if (updateError) {
                     console.error("Failed to approve trade:", updateError)
                 } else {
+                    // Change 1 — Partial shift split logic
+                    if (trade.coverage_start) {
+                        // Fetch original shift details
+                        const { data: originalShift, error: shiftFetchErr } = await supabaseClient
+                            .from('shifts')
+                            .select('title, date')
+                            .eq('id', trade.shift_id)
+                            .single();
+                        
+                        if (originalShift && !shiftFetchErr) {
+                            // Fetch requester profile for notes
+                            const { data: requester } = await supabaseClient
+                                .from('users')
+                                .select('first_name, full_name')
+                                .eq('id', trade.requested_by)
+                                .single();
+                            
+                            const requesterFirstName = requester 
+                                ? (requester.first_name || (requester.full_name ?? '').split(' ')[0] || 'Caregiver')
+                                : 'Caregiver';
+                            
+                            // Shorten original caregiver's shift
+                            const { error: updateOriginalErr } = await supabaseClient
+                                .from('shifts')
+                                .update({ end_time: trade.coverage_start })
+                                .eq('id', trade.shift_id);
+                            
+                            if (updateOriginalErr) {
+                                console.error("Failed to shorten original shift:", updateOriginalErr);
+                            }
+                            
+                            // Create the split shift
+                            const { error: insertShiftErr } = await supabaseClient
+                                .from('shifts')
+                                .insert({
+                                    title: originalShift.title,
+                                    date: originalShift.date,
+                                    start_time: trade.coverage_start,
+                                    end_time: trade.coverage_end,
+                                    assigned_to: user.id,
+                                    is_open: false,
+                                    trade_notes: `Coverage from ${requesterFirstName} — trade accepted via SMS`
+                                });
+                            
+                            if (insertShiftErr) {
+                                console.error("Failed to insert split shift:", insertShiftErr);
+                            }
+                        } else {
+                            console.error("Failed to fetch original shift:", shiftFetchErr);
+                        }
+                    }
+
+                    // Change 2 — Manager/admin notification on acceptance
+                    const { data: adminsAndManagers, error: fetchAdminsErr } = await supabaseClient
+                        .from('users')
+                        .select('id')
+                        .in('role', ['admin', 'manager'])
+                        .eq('status', 'active');
+
+                    if (fetchAdminsErr) {
+                        console.error("Failed to fetch admins and managers:", fetchAdminsErr);
+                    } else if (adminsAndManagers && adminsAndManagers.length > 0) {
+                        const notificationsToInsert = adminsAndManagers.map((item: any) => ({
+                            user_id: item.id,
+                            actor_id: user.id,
+                            type: 'shift_trade',
+                            reference_id: trade.shift_id,
+                            is_read: false
+                        }));
+                        
+                        const { error: notifErr } = await supabaseClient
+                            .from('notifications')
+                            .insert(notificationsToInsert);
+                            
+                        if (notifErr) {
+                            console.error("Failed to insert notifications for admins/managers:", notifErr);
+                        }
+                    }
+
                     // The shift trade is approved!
                     // In a full implementation, you'd also want to re-assign the shift to this caregiver
                     // in the `shifts` table, and potentially send a confirmation SMS back to them.
