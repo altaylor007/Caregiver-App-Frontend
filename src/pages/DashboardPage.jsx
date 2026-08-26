@@ -13,6 +13,10 @@ const DashboardPage = () => {
     const [openShiftsCount, setOpenShiftsCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
+    // Pending coverage request states
+    const [pendingTrades, setPendingTrades] = useState([]);
+    const [cancelErrors, setCancelErrors] = useState({});
+
     // Schedule acknowledgment states
     const [activeBroadcast, setActiveBroadcast] = useState(null);
     const [pendingShifts, setPendingShifts] = useState([]);
@@ -135,6 +139,25 @@ const DashboardPage = () => {
                     setPendingShifts([]);
                     setHasAcknowledged(true);
                 }
+            }
+
+            // Fetch pending trades
+            if (profile?.id) {
+                const { data: trades } = await supabase
+                    .from('shift_trades')
+                    .select(`
+                        id,
+                        coverage_start,
+                        coverage_end,
+                        created_at,
+                        shifts ( title, date, start_time, end_time ),
+                        proposed_user:users!proposed_to ( first_name, full_name )
+                    `)
+                    .eq('requested_by', profile.id)
+                    .eq('status', 'pending')
+                    .order('created_at', { ascending: false });
+
+                setPendingTrades(trades || []);
             }
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
@@ -407,6 +430,22 @@ const DashboardPage = () => {
         }
     };
 
+    const handleCancelTrade = async (tradeId) => {
+        try {
+            setCancelErrors(prev => ({ ...prev, [tradeId]: '' }));
+            const { error } = await supabase
+                .from('shift_trades')
+                .delete()
+                .eq('id', tradeId);
+
+            if (error) throw error;
+            await fetchDashboardData();
+        } catch (err) {
+            console.error("Error cancelling trade request:", err);
+            setCancelErrors(prev => ({ ...prev, [tradeId]: err.message || "Failed to cancel request." }));
+        }
+    };
+
     return (
         <div>
             <h2 style={{ marginBottom: '1rem' }}>Dashboard</h2>
@@ -531,6 +570,62 @@ const DashboardPage = () => {
                     <p className="text-sm text-neutral-muted" style={{ marginTop: '1rem' }}>You have no upcoming shifts scheduled right now.</p>
                 )}
             </div>
+
+            {pendingTrades.length > 0 && (
+                <div className="card" style={{ marginTop: '1rem' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>Pending Requests</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {pendingTrades.map(trade => {
+                            const isPartial = !!trade.coverage_start;
+                            const timeText = isPartial
+                                ? `${trade.coverage_start ? formatShift(trade.coverage_start, 'h:mma').toLowerCase() : ''} – ${trade.coverage_end ? formatShift(trade.coverage_end, 'h:mma').toLowerCase() : ''}`
+                                : 'Full shift';
+                            const whoText = trade.proposed_user?.first_name || trade.proposed_user?.full_name || 'All caregivers';
+                            const hasError = cancelErrors[trade.id];
+
+                            return (
+                                <div key={trade.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', backgroundColor: 'var(--bg-app)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--neutral-800)' }}>
+                                            {trade.shifts?.title || 'Shift'}
+                                        </div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--neutral-600)', marginTop: '0.1rem' }}>
+                                            {trade.shifts?.start_time ? formatShift(trade.shifts.start_time, 'EEEE, MMM do') : ''}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--neutral-500)', marginTop: '0.2rem' }}>
+                                            Time: {timeText}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--neutral-500)' }}>
+                                            Asked: {whoText}
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCancelTrade(trade.id)}
+                                        className="btn btn-outline"
+                                        style={{
+                                            width: '100%',
+                                            minHeight: '44px',
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                            alignItems: 'center',
+                                            borderColor: 'var(--danger-600)',
+                                            color: 'var(--danger-600)'
+                                        }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    {hasError && (
+                                        <div style={{ color: 'var(--danger-600)', fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                                            ⚠️ {hasError}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             <div
                 className="card hover-card"
