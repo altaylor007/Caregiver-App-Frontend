@@ -150,6 +150,19 @@ serve(async (req) => {
                         } else {
                             console.error("Failed to fetch original shift:", shiftFetchErr);
                         }
+                    } else {
+                        // Full trade — reassign the shift to the accepting caregiver
+                        const { error: reassignErr } = await supabaseClient
+                            .from('shifts')
+                            .update({
+                                assigned_to: user.id,
+                                trade_notes: `Shift trade accepted via SMS`
+                            })
+                            .eq('id', trade.shift_id);
+
+                        if (reassignErr) {
+                            console.error("Failed to reassign shift for full trade:", reassignErr);
+                        }
                     }
 
                     // Change 2 — Manager/admin notification on acceptance
@@ -180,8 +193,6 @@ serve(async (req) => {
                     }
 
                     // The shift trade is approved!
-                    // In a full implementation, you'd also want to re-assign the shift to this caregiver
-                    // in the `shifts` table, and potentially send a confirmation SMS back to them.
 
                     // You might also insert a record into the `messages` table so the manager sees it in real-time
                     await supabaseClient.from('messages').insert({
