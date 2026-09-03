@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, subDays, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, formatDistanceToNow } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, addDays, subDays, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, formatDistanceToNow } from 'date-fns';
 import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
 
@@ -16,6 +16,18 @@ const AdminSchedulePage = () => {
             timeOptions.push({ val, label });
         }
     }
+
+    const endTimeOptions = [...timeOptions, { val: '24:00', label: '12:00 AM (Midnight)' }];
+
+    // Resolves an end-time value against a shift's date, rolling over to the
+    // next calendar day when the end time is the special "24:00" (midnight) value.
+    const resolveShiftEndDateTime = (dateStr, timeStr) => {
+        if (timeStr === '24:00') {
+            return { date: format(addDays(parseISO(dateStr), 1), 'yyyy-MM-dd'), time: '00:00' };
+        }
+        return { date: dateStr, time: timeStr };
+    };
+
     const [shifts, setShifts] = useState([]);
     const [caregivers, setCaregivers] = useState([]);
     const [availabilityResponses, setAvailabilityResponses] = useState([]);
@@ -630,7 +642,8 @@ const AdminSchedulePage = () => {
 
         if (currentId) {
             const startIso = createShiftIso(date, startTime);
-            const endIso = createShiftIso(date, endTime);
+            const endResolved = resolveShiftEndDateTime(date, endTime);
+            const endIso = createShiftIso(endResolved.date, endResolved.time);
 
             // Check for overlaps (excluding current shift)
             const overlapStartMs = new Date(startIso).getTime();
@@ -677,7 +690,8 @@ const AdminSchedulePage = () => {
                     shiftDate.setDate(sunday.getDate() + i);
                     const shiftDateStr = format(shiftDate, 'yyyy-MM-dd');
                     const startIso = createShiftIso(shiftDateStr, startTime);
-                    const endIso = createShiftIso(shiftDateStr, endTime);
+                    const endResolved = resolveShiftEndDateTime(shiftDateStr, endTime);
+                    const endIso = createShiftIso(endResolved.date, endResolved.time);
 
                     // Check for overlap strictly
                     const overlapStartMs = new Date(startIso).getTime();
@@ -708,7 +722,8 @@ const AdminSchedulePage = () => {
                 error = res.error;
             } else {
                 const startIso = createShiftIso(date, startTime);
-                const endIso = createShiftIso(date, endTime);
+                const endResolved = resolveShiftEndDateTime(date, endTime);
+                const endIso = createShiftIso(endResolved.date, endResolved.time);
 
                 // Check for overlaps for new single shift
                 const overlapStartMs = new Date(startIso).getTime();
@@ -1259,7 +1274,7 @@ const AdminSchedulePage = () => {
                                                 }}
                                                 title={`Use template: ${template.title} `}
                                             >
-                                                {template.title} ({formatShift(createShiftIso('1970-01-01', template.start_time.trim()), 'h:mma').toLowerCase()} - {formatShift(createShiftIso('1970-01-01', template.end_time.trim()), 'h:mma').toLowerCase()})
+                                                {template.title} ({formatShift(createShiftIso('1970-01-01', template.start_time.trim()), 'h:mma').toLowerCase()} - {template.end_time.trim().startsWith('24:') ? '12:00am' : formatShift(createShiftIso('1970-01-01', template.end_time.trim()), 'h:mma').toLowerCase()})
                                             </button>
                                             <button
                                                 type="button"
@@ -1295,7 +1310,7 @@ const AdminSchedulePage = () => {
                                     <div className="form-group">
                                         <label className="form-label">End Time</label>
                                         <select className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} required>
-                                            {timeOptions.map(t => <option key={t.val} value={t.val}>{t.label}</option>)}
+                                            {endTimeOptions.map(t => <option key={t.val} value={t.val}>{t.label}</option>)}
                                         </select>
                                     </div>
                                 </div>
