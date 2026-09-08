@@ -238,7 +238,10 @@ const AdminCaregiversPage = () => {
 
         const { error } = await supabase
             .from('users')
-            .update({ status: newStatus })
+            .update({
+                status: newStatus,
+                deactivated_at: newStatus === 'inactive' ? new Date().toISOString() : null
+            })
             .eq('id', id);
 
         if (!error) {

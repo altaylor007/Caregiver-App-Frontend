@@ -37,9 +37,8 @@ const HoursView = () => {
         // Fetch all active caregivers
         const { data: users } = await supabase
             .from('users')
-            .select('id, full_name')
-            .eq('is_caregiver', true)
-            .eq('status', 'active');
+            .select('id, full_name, status, deactivated_at')
+            .eq('is_caregiver', true);
 
         // Fetch all shifts in this week range
         const { data: shifts } = await supabase
@@ -56,7 +55,12 @@ const HoursView = () => {
             ...(endYear !== startYear ? getHolidaysForYear(endYear) : [])
         ]);
 
-        const result = (users || []).map(u => {
+        const eligibleUsers = (users || []).filter(u =>
+            u.status === 'active' ||
+            (u.status === 'inactive' && u.deactivated_at && u.deactivated_at >= startStr)
+        );
+
+        const result = eligibleUsers.map(u => {
             const userShifts = (shifts || []).filter(s => s.assigned_to === u.id);
             let regularHours = 0;
             let holidayHours = 0;
@@ -216,8 +220,8 @@ const PayrollReportView = () => {
             const startDateStr = format(startDate, 'yyyy-MM-dd');
 
             const { data: users, error: uError } = await supabase
-                .from('users').select('id, full_name, payroll_enabled')
-                .eq('is_caregiver', true).eq('status', 'active');
+                .from('users').select('id, full_name, payroll_enabled, status, deactivated_at')
+                .eq('is_caregiver', true);
             if (uError) throw uError;
 
             const { data: shifts, error: sError } = await supabase
@@ -260,7 +264,12 @@ const PayrollReportView = () => {
             const sumItems = (items) =>
                 Number(items.reduce((s, x) => s + Number(x.amount), 0).toFixed(2));
 
-            const reportRows = (users || []).map(u => {
+            const eligibleUsers = (users || []).filter(u =>
+                u.status === 'active' ||
+                (u.status === 'inactive' && u.deactivated_at && u.deactivated_at >= startDateStr)
+            );
+
+            const reportRows = eligibleUsers.map(u => {
                 const userShifts = (shifts || []).filter(s => s.assigned_to === u.id);
                 let regularHours = 0;
                 let holidayHours = 0;
