@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, addDays, subDays, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, formatDistanceToNow } from 'date-fns';
 import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
+import { printSchedulePdf } from '../lib/schedulePdf';
 
 const AdminSchedulePage = () => {
     // Generate time options in 15-minute increments (00:00 - 23:45)
@@ -481,6 +482,36 @@ const AdminSchedulePage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentDate]);
 
+    useEffect(() => {
+        const handleBeforePrint = () => {
+            const rows = Array.from(document.querySelectorAll('.calendar-wrapper tbody tr.calendar-row'));
+            const thead = document.querySelector('.calendar-wrapper thead');
+            const PAGE_HEIGHT_PX = 758;
+            const SAFETY_MARGIN_PX = 20;
+            const theadHeight = thead ? thead.offsetHeight : 0;
+            const budget = PAGE_HEIGHT_PX - theadHeight - SAFETY_MARGIN_PX;
+            let cumulative = 0;
+            rows.forEach((row, index) => {
+                row.style.breakBefore = '';
+                row.style.pageBreakBefore = '';
+                const height = row.offsetHeight;
+                if (index === 0) {
+                    cumulative = height;
+                    return;
+                }
+                if (cumulative + height > budget) {
+                    row.style.breakBefore = 'page';
+                    row.style.pageBreakBefore = 'always';
+                    cumulative = height;
+                } else {
+                    cumulative += height;
+                }
+            });
+        };
+        window.addEventListener('beforeprint', handleBeforePrint);
+        return () => window.removeEventListener('beforeprint', handleBeforePrint);
+    }, []);
+
     // Helper: check if a date string falls within any confirmed payroll lock range
     const isDateLocked = (dateStr) =>
         lockedRanges.some(r => dateStr >= r.startStr && dateStr <= r.endStr);
@@ -850,6 +881,36 @@ const AdminSchedulePage = () => {
     const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
     const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
+    const handlePrint = () => {
+        const weeks = [];
+        for (let weekIndex = 0; weekIndex < calendarDays.length / 7; weekIndex++) {
+            const weekDays = calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7);
+            const week = weekDays.map(day => {
+                const dayStr = format(day, 'yyyy-MM-dd');
+                let dayShifts = shifts.filter(s => s.date === dayStr);
+                if (filterCaregiverId) {
+                    dayShifts = dayShifts.filter(s => s.assigned_to === filterCaregiverId);
+                }
+                return {
+                    dateLabel: format(day, 'd'),
+                    isCurrentMonthDay: isSameMonth(day, currentDate),
+                    shifts: dayShifts.map(shift => {
+                        const isAssigned = !!shift.assigned_to || !!shift.custom_assigned_name;
+                        const assigneeName = shift.users?.first_name || shift.users?.full_name || shift.custom_assigned_name || 'Caregiver';
+                        return {
+                            title: shift.title,
+                            timeLabel: `${formatShift(shift.start_time, 'h:mma').toLowerCase()} - ${formatShift(shift.end_time, 'h:mma').toLowerCase()}`,
+                            assigneeLabel: isAssigned ? assigneeName : 'Open Shift',
+                        };
+                    }),
+                };
+            });
+            weeks.push(week);
+        }
+
+        printSchedulePdf({ weeks, monthLabel: format(currentDate, 'MMMM yyyy') });
+    };
+
     // Compute Acknowledgment Groups
     const acknowledgedList = [];
     const flaggedList = [];
@@ -874,7 +935,7 @@ const AdminSchedulePage = () => {
         <div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
                 {/* Top Row: Title, Month Nav, View Toggle */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                     <h2 style={{ margin: 0 }}>Master Schedule</h2>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', padding: '0.2rem' }}>
@@ -906,7 +967,7 @@ const AdminSchedulePage = () => {
 
                 {/* Bottom Row: Actions (Only on Calendar View) */}
                 {viewMode === 'calendar' && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
+                    <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-md)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <label className="text-sm font-semibold text-primary" style={{ whiteSpace: 'nowrap' }}>Filter:</label>
                             <select
@@ -930,7 +991,7 @@ const AdminSchedulePage = () => {
                             <button onClick={openBroadcastModal} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
                                 <Send size={16} /> Notify Caregivers
                             </button>
-                            <button onClick={() => window.print()} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
+                            <button onClick={handlePrint} className="btn btn-outline text-sm" style={{ display: 'flex', gap: '0.25rem', backgroundColor: 'white' }}>
                                 <Printer size={16} /> Print
                             </button>
                             <button onClick={openNewForm} className="btn btn-primary text-sm" style={{ display: 'flex', gap: '0.25rem' }}>
@@ -943,7 +1004,7 @@ const AdminSchedulePage = () => {
 
             {/* Open Coverage Requests Panel */}
             {openCoverageRequests.length > 0 && (
-                <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div className="no-print" style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--warning-50)', border: '1px solid var(--warning-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                     <h3 style={{ margin: 0, marginBottom: '0.75rem', color: 'var(--warning-800)', fontSize: '1.1rem', fontWeight: 600 }}>Open Coverage Requests</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {openCoverageRequests.map(trade => {
@@ -997,7 +1058,7 @@ const AdminSchedulePage = () => {
 
             {/* Schedule Acknowledgment Status Panel */}
             {latestBroadcast && (
-                <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div className="no-print" style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
                         <div>
                             <h3 style={{ margin: 0, color: 'var(--neutral-900)', fontSize: '1.1rem', fontWeight: 600 }}>
@@ -1099,7 +1160,7 @@ const AdminSchedulePage = () => {
 
             {/* Acknowledgement History Section */}
             {archivedBroadcasts.length > 0 && (
-                <div style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div className="no-print" style={{ marginBottom: '2rem', padding: '1.25rem', backgroundColor: 'var(--neutral-50)', border: '1px solid var(--neutral-200)', borderRadius: 'var(--radius-md)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                     <h3 style={{ margin: 0, marginBottom: '1rem', color: 'var(--neutral-900)', fontSize: '1.1rem', fontWeight: 600 }}>
                         Acknowledgement History
                     </h3>
@@ -1730,20 +1791,31 @@ const AdminSchedulePage = () => {
                         )}
 
                         <div className="calendar-container">
-                            <div className="calendar-wrapper">
-                                <div className="calendar-row">
-                                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                                        <div key={day} className="calendar-header-cell">
-                                            {day}
-                                        </div>
-                                    ))}
-                                </div>
-
+                            <table className="calendar-wrapper">
+                                <thead>
+                                    <tr className="print-only-header-row">
+                                        <td colSpan={7} className="print-only-header-cell">
+                                            <div className="print-only-header" style={{ display: 'none' }}>
+                                                <img src="/tulip.svg" alt="ACT Logo" style={{ width: '32px', height: '32px' }} />
+                                                <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{format(currentDate, 'MMMM yyyy')}</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr className="calendar-row">
+                                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                                            <td key={day} className="calendar-header-cell">
+                                                {day}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
                                 {loading ? (
-                                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
+                                    <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</td></tr>
                                 ) : (
-                                    <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                                        {calendarDays.map(day => {
+                                    Array.from({ length: calendarDays.length / 7 }).map((_, weekIndex) => (
+                                        <tr className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }} key={`week-${weekIndex}`}>
+                                            {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map(day => {
                                             const dayStr = format(day, 'yyyy-MM-dd');
                                             let dayShifts = shifts.filter(s => s.date === dayStr);
 
@@ -1755,7 +1827,7 @@ const AdminSchedulePage = () => {
                                             const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                             return (
-                                                <div
+                                                <td
                                                     key={dayStr}
                                                     className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''} `}
                                                     style={{ gridColumn: 'auto', cursor: 'pointer', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : (filterCaregiverId ? '#fafcff' : 'transparent'), opacity: !isCurrentMonthDay ? 0.7 : 1 }}
@@ -1940,12 +2012,14 @@ const AdminSchedulePage = () => {
                                                             </div>
                                                         )}
                                                     </div>
-                                                </div>
+                                                </td>
                                             );
-                                        })}
-                                    </div>
+                                            })}
+                                        </tr>
+                                    ))
                                 )}
-                            </div>
+                                </tbody>
+                            </table>
                         </div>
                     </>
                 )}

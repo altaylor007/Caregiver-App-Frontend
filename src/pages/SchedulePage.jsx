@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth } from 'date-fns';
 import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { ChevronLeft, ChevronRight, CalendarCheck, Printer } from 'lucide-react';
+import { printSchedulePdf } from '../lib/schedulePdf';
 import { useNavigate } from 'react-router-dom';
 
 const SchedulePage = () => {
@@ -38,7 +39,7 @@ const SchedulePage = () => {
 
     const [currentDate, setCurrentDate] = useState(getTodayInCentral());
     const [showOnlyMyShifts, setShowOnlyMyShifts] = useState(false);
-    const [printMode, setPrintMode] = useState(false); // 'full' | 'mine' | false
+    const [printMode] = useState(false); // 'full' | 'mine' | false
 
     const [latestBroadcast, setLatestBroadcast] = useState(null);
     const [showBroadcastBanner, setShowBroadcastBanner] = useState(false);
@@ -89,6 +90,36 @@ const SchedulePage = () => {
 
         checkBroadcast();
     }, [profile]);
+
+    useEffect(() => {
+        const handleBeforePrint = () => {
+            const rows = Array.from(document.querySelectorAll('.calendar-wrapper tbody tr.calendar-row'));
+            const thead = document.querySelector('.calendar-wrapper thead');
+            const PAGE_HEIGHT_PX = 758;
+            const SAFETY_MARGIN_PX = 20;
+            const theadHeight = thead ? thead.offsetHeight : 0;
+            const budget = PAGE_HEIGHT_PX - theadHeight - SAFETY_MARGIN_PX;
+            let cumulative = 0;
+            rows.forEach((row, index) => {
+                row.style.breakBefore = '';
+                row.style.pageBreakBefore = '';
+                const height = row.offsetHeight;
+                if (index === 0) {
+                    cumulative = height;
+                    return;
+                }
+                if (cumulative + height > budget) {
+                    row.style.breakBefore = 'page';
+                    row.style.pageBreakBefore = 'always';
+                    cumulative = height;
+                } else {
+                    cumulative += height;
+                }
+            });
+        };
+        window.addEventListener('beforeprint', handleBeforePrint);
+        return () => window.removeEventListener('beforeprint', handleBeforePrint);
+    }, []);
 
     const handleAcknowledgeBroadcast = async (status) => {
         if (!latestBroadcast || !profile?.id) return;
@@ -376,20 +407,34 @@ const SchedulePage = () => {
     };
 
     const handlePrint = (myShiftsOnly) => {
-        setShowOnlyMyShifts(myShiftsOnly);
-        setPrintMode(myShiftsOnly ? 'mine' : 'full');
-    };
-
-    useEffect(() => {
-        if (printMode) {
-            // Small delay to allow React to re-render with the new filter state
-            const timer = setTimeout(() => {
-                window.print();
-                setPrintMode(false);
-            }, 150);
-            return () => clearTimeout(timer);
+        const weeks = [];
+        for (let weekIndex = 0; weekIndex < calendarDays.length / 7; weekIndex++) {
+            const weekDays = calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7);
+            const week = weekDays.map(day => {
+                const dayStr = format(day, 'yyyy-MM-dd');
+                let dayShifts = shifts.filter(s => s.date === dayStr);
+                if (myShiftsOnly) {
+                    dayShifts = dayShifts.filter(s => s.assigned_to === user.id);
+                }
+                return {
+                    dateLabel: format(day, 'd'),
+                    isCurrentMonthDay: isSameMonth(day, currentDate),
+                    shifts: dayShifts.map(shift => {
+                        const isMine = shift.assigned_to === user.id;
+                        const assigneeName = shift.custom_assigned_name || shift.users?.first_name || shift.users?.full_name || null;
+                        return {
+                            title: shift.title,
+                            timeLabel: `${formatShift(shift.start_time, 'h:mma').toLowerCase()} - ${formatShift(shift.end_time, 'h:mma').toLowerCase()}`,
+                            assigneeLabel: assigneeName ? (isMine ? 'You' : assigneeName) : null,
+                        };
+                    }),
+                };
+            });
+            weeks.push(week);
         }
-    }, [printMode]);
+
+        printSchedulePdf({ weeks, monthLabel: format(currentDate, 'MMMM yyyy') });
+    };
 
     const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
     const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
@@ -404,14 +449,6 @@ const SchedulePage = () => {
 
     return (
         <div style={{ paddingBottom: '2rem' }}>
-            {/* Print-only branded header */}
-            <div className="print-only-header" style={{ display: 'none' }}>
-                <img src="/tulip.svg" alt="ACT Logo" style={{ width: '32px', height: '32px' }} />
-                <span style={{ fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.02em' }}>ACT</span>
-                <span style={{ fontSize: '1rem', fontWeight: 500, color: '#555', marginLeft: '0.5rem' }}>
-                    — My Schedule: {format(currentDate, 'MMMM yyyy')}
-                </span>
-            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
                 {/* Top Row: Title + Month Nav */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -752,20 +789,31 @@ const SchedulePage = () => {
                 )
             ) : (
                 <div className={`calendar-container ${showOnlyMyShifts ? 'is-my-schedule-mode' : ''}`} style={showOnlyMyShifts ? { border: '2px solid var(--primary-300)', backgroundColor: '#fafcff' } : {}}>
-                    <div className="calendar-wrapper">
-                        <div className="calendar-row" style={showOnlyMyShifts ? { backgroundColor: 'var(--primary-50)' } : {}}>
-                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                                <div key={day} className="calendar-header-cell">
-                                    {day}
-                                </div>
-                            ))}
-                        </div>
-
+                    <table className="calendar-wrapper">
+                        <thead>
+                            <tr className="print-only-header-row">
+                                <td colSpan={7} className="print-only-header-cell">
+                                    <div className="print-only-header" style={{ display: 'none' }}>
+                                        <img src="/tulip.svg" alt="ACT Logo" style={{ width: '32px', height: '32px' }} />
+                                        <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{format(currentDate, 'MMMM yyyy')}</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr className="calendar-row" style={showOnlyMyShifts ? { backgroundColor: 'var(--primary-50)' } : {}}>
+                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                                    <td key={day} className="calendar-header-cell">
+                                        {day}
+                                    </td>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
                         {loading ? (
-                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</div>
+                            <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--neutral-500)' }}>Loading calendar...</td></tr>
                         ) : (
-                            <div className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                                {calendarDays.map(day => {
+                            Array.from({ length: calendarDays.length / 7 }).map((_, weekIndex) => (
+                                <tr className="calendar-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }} key={`week-${weekIndex}`}>
+                                    {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map(day => {
                                     const dayStr = format(day, 'yyyy-MM-dd');
                                     let dayShifts = shifts.filter(s => s.date === dayStr);
 
@@ -777,7 +825,7 @@ const SchedulePage = () => {
                                     const isCurrentMonthDay = isSameMonth(day, currentDate);
 
                                     return (
-                                        <div key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''}`} style={{ gridColumn: 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : 'transparent', opacity: !isCurrentMonthDay ? 0.7 : 1 }}>
+                                        <td key={dayStr} className={`calendar-day-cell ${isTodayDay ? 'is-today' : ''} ${!isCurrentMonthDay ? 'is-outside-month' : ''}`} style={{ gridColumn: 'auto', backgroundColor: !isCurrentMonthDay ? 'var(--neutral-50)' : 'transparent', opacity: !isCurrentMonthDay ? 0.7 : 1 }}>
                                             <div className="calendar-date-label">
                                                 <span>{format(day, 'd')}</span>
                                                 {isTodayDay && <span style={{ fontSize: '0.7rem', color: 'var(--primary-600)', backgroundColor: 'var(--primary-100)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>Today</span>}
@@ -863,12 +911,14 @@ const SchedulePage = () => {
                                                     </div>
                                                 )}
                                             </div>
-                                        </div>
+                                        </td>
                                     );
-                                })}
-                            </div>
+                                    })}
+                                </tr>
+                            ))
                         )}
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
             )}
 
