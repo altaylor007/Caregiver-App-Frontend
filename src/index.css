@@ -516,6 +516,8 @@ h3 {
 
   .calendar-row {
     gap: 0.25rem !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
   .calendar-header-cell {
@@ -568,10 +570,6 @@ h3 {
     font-size: 1rem !important;
   }
 
-  /* Scale entire calendar to ensure it fits on one page */
-  .calendar-row {
-    font-size: 90% !important;
-  }
 }
 
 .topic-unread-dot {
