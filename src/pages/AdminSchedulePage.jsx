@@ -4,6 +4,7 @@ import { format, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, addDa
 import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
 import { printSchedulePdf } from '../lib/schedulePdf';
+import { buildCaregiverColorMap } from '../lib/scheduleColors';
 
 const AdminSchedulePage = () => {
     // Generate time options in 15-minute increments (00:00 - 23:45)
@@ -196,7 +197,7 @@ const AdminSchedulePage = () => {
         // Fetch shifts for this range
         const shiftsData = await supabase
             .from('shifts')
-            .select('*, users(full_name, first_name)')
+            .select('*, users(full_name, first_name, is_test_account)')
             .gte('date', startDateStr)
             .lte('date', endDateStr)
             .order('start_time', { ascending: true });
@@ -294,7 +295,7 @@ const AdminSchedulePage = () => {
 
             let activeCGQuery = supabase
                 .from('users')
-                .select('id, first_name, last_name, full_name')
+                .select('id, first_name, last_name, full_name, is_test_account')
                 .eq('status', 'active')
                 .or('role.eq.caregiver,is_caregiver.eq.true');
             if (!import.meta.env.DEV) activeCGQuery = activeCGQuery.eq('is_test_account', false);
@@ -882,6 +883,7 @@ const AdminSchedulePage = () => {
     const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
     const handlePrint = () => {
+        const printableCaregivers = activeCaregivers.filter(cg => !cg.is_test_account);
         const weeks = [];
         for (let weekIndex = 0; weekIndex < calendarDays.length / 7; weekIndex++) {
             const weekDays = calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7);
@@ -891,6 +893,8 @@ const AdminSchedulePage = () => {
                 if (filterCaregiverId) {
                     dayShifts = dayShifts.filter(s => s.assigned_to === filterCaregiverId);
                 }
+                // Exclude any shift assigned to a test account
+                dayShifts = dayShifts.filter(s => !s.users?.is_test_account);
                 return {
                     dateLabel: format(day, 'd'),
                     isCurrentMonthDay: isSameMonth(day, currentDate),
@@ -901,6 +905,7 @@ const AdminSchedulePage = () => {
                             title: shift.title,
                             timeLabel: `${formatShift(shift.start_time, 'h:mma').toLowerCase()} - ${formatShift(shift.end_time, 'h:mma').toLowerCase()}`,
                             assigneeLabel: isAssigned ? assigneeName : 'Open Shift',
+                            caregiverId: shift.assigned_to,
                         };
                     }),
                 };
@@ -908,7 +913,29 @@ const AdminSchedulePage = () => {
             weeks.push(week);
         }
 
-        printSchedulePdf({ weeks, monthLabel: format(currentDate, 'MMMM yyyy') });
+        // Union of printableCaregivers and any caregiver appearing in this month's shifts (e.g. deactivated)
+        const rosterMap = new Map();
+        printableCaregivers.forEach(cg => rosterMap.set(cg.id, { ...cg }));
+
+        weeks.forEach(week => {
+            week.forEach(day => {
+                day.shifts.forEach(shift => {
+                    if (shift.caregiverId && !rosterMap.has(shift.caregiverId)) {
+                        rosterMap.set(shift.caregiverId, {
+                            id: shift.caregiverId,
+                            first_name: shift.assigneeLabel,
+                            full_name: shift.assigneeLabel,
+                            is_test_account: false,
+                        });
+                    }
+                });
+            });
+        });
+
+        const combinedRoster = Array.from(rosterMap.values());
+        const caregiverColorMap = buildCaregiverColorMap(combinedRoster);
+
+        printSchedulePdf({ weeks, monthLabel: format(currentDate, 'MMMM yyyy'), caregiverColorMap, activeCaregivers: combinedRoster });
     };
 
     // Compute Acknowledgment Groups
