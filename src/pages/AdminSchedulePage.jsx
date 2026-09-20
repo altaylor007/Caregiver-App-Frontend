@@ -5,6 +5,7 @@ import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Edit2, Trash2, Send, Check, MessageSquare, Printer, Lock } from 'lucide-react';
 import { printSchedulePdf } from '../lib/schedulePdf';
 import { buildCaregiverColorMap } from '../lib/scheduleColors';
+import { computeCoverageGaps, formatMinutesLabel, timeToMinutes } from '../lib/scheduleGaps';
 
 const AdminSchedulePage = () => {
     // Generate time options in 15-minute increments (00:00 - 23:45)
@@ -898,6 +899,7 @@ const AdminSchedulePage = () => {
                 return {
                     dateLabel: format(day, 'd'),
                     isCurrentMonthDay: isSameMonth(day, currentDate),
+                    gaps: dayShifts.length > 0 ? computeCoverageGaps(dayShifts) : [],
                     shifts: dayShifts.map(shift => {
                         const isAssigned = !!shift.assigned_to || !!shift.custom_assigned_name;
                         const assigneeName = shift.users?.first_name || shift.users?.full_name || shift.custom_assigned_name || 'Caregiver';
@@ -906,6 +908,7 @@ const AdminSchedulePage = () => {
                             timeLabel: `${formatShift(shift.start_time, 'h:mma').toLowerCase()} - ${formatShift(shift.end_time, 'h:mma').toLowerCase()}`,
                             assigneeLabel: isAssigned ? assigneeName : 'Open Shift',
                             caregiverId: shift.assigned_to,
+                            startMinutes: timeToMinutes(shift.start_time) ?? 0,
                         };
                     }),
                 };
@@ -1850,6 +1853,9 @@ const AdminSchedulePage = () => {
                                                 dayShifts = dayShifts.filter(s => s.assigned_to === filterCaregiverId);
                                             }
 
+                                            const coverageGaps = dayShifts.length > 0 ? computeCoverageGaps(dayShifts) : [];
+                                            let gapPointer = 0;
+
                                             const isTodayDay = isSameDay(day, getTodayInCentral());
                                             const isCurrentMonthDay = isSameMonth(day, currentDate);
 
@@ -1885,7 +1891,31 @@ const AdminSchedulePage = () => {
                                                                 return true;
                                                             });
 
+                                                            const precedingGaps = [];
+                                                            const shiftStartMinutes = timeToMinutes(shift.start_time) ?? 0;
+                                                            while (gapPointer < coverageGaps.length && coverageGaps[gapPointer][0] < shiftStartMinutes) {
+                                                                precedingGaps.push(coverageGaps[gapPointer]);
+                                                                gapPointer += 1;
+                                                            }
+
                                                             return (
+                                                                <React.Fragment key={`entry-${shift.id}`}>
+                                                                {precedingGaps.map(([start, end], gapIdx) => (
+                                                                    <div
+                                                                        key={`gap-${shift.id}-${gapIdx}`}
+                                                                        style={{
+                                                                            fontSize: '0.7rem',
+                                                                            fontWeight: 600,
+                                                                            color: 'var(--neutral-600)',
+                                                                            backgroundColor: 'var(--neutral-200)',
+                                                                            borderRadius: 'var(--radius-sm)',
+                                                                            padding: '0.3rem 0.4rem',
+                                                                            textAlign: 'center',
+                                                                        }}
+                                                                    >
+                                                                        {`Gap: ${formatMinutesLabel(start)} - ${formatMinutesLabel(end)}`}
+                                                                    </div>
+                                                                ))}
                                                                 <div
                                                                     key={shift.id}
                                                                     className={`shift-card-mini ${cardClass}`}
@@ -2031,6 +2061,7 @@ const AdminSchedulePage = () => {
                                                                         </>
                                                                     )}
                                                                 </div>
+                                                                </React.Fragment>
                                                             );
                                                         })}
                                                         {dayShifts.length === 0 && (
@@ -2038,6 +2069,22 @@ const AdminSchedulePage = () => {
                                                                 No shifts
                                                             </div>
                                                         )}
+                                                        {coverageGaps.slice(gapPointer).map(([start, end], gapIdx) => (
+                                                            <div
+                                                                key={`gap-trailing-${gapIdx}`}
+                                                                style={{
+                                                                    fontSize: '0.7rem',
+                                                                    fontWeight: 600,
+                                                                    color: 'var(--neutral-600)',
+                                                                    backgroundColor: 'var(--neutral-200)',
+                                                                    borderRadius: 'var(--radius-sm)',
+                                                                    padding: '0.3rem 0.4rem',
+                                                                    textAlign: 'center',
+                                                                }}
+                                                            >
+                                                                {`Gap: ${formatMinutesLabel(start)} - ${formatMinutesLabel(end)}`}
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 </td>
                                             );

@@ -1,6 +1,7 @@
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 import { getCaregiverColor } from './scheduleColors';
+import { formatMinutesLabel } from './scheduleGaps';
 
 pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts.vfs;
 
@@ -31,7 +32,44 @@ function buildDayCell(dayCell, caregiverColorMap) {
     }
 
     const stack = [];
+    const gaps = caregiverColorMap ? (dayCell.gaps || []) : [];
+    let gapIndex = 0;
+
+    const pushGapBar = ([start, end]) => {
+        stack.push({
+            table: {
+                widths: ['*'],
+                body: [
+                    [
+                        {
+                            text: `GAP ${formatMinutesLabel(start)}-${formatMinutesLabel(end)}`,
+                            fontSize: 7,
+                            bold: true,
+                            alignment: 'center',
+                            color: '#444444',
+                            fillColor: '#d9d9d9',
+                            border: [false, false, false, false],
+                        },
+                    ],
+                ],
+            },
+            layout: {
+                paddingLeft: () => 2,
+                paddingRight: () => 2,
+                paddingTop: () => 1,
+                paddingBottom: () => 1,
+            },
+            margin: [0, 0, 0, 1.5],
+        });
+    };
+
     dayCell.shifts.forEach((shift, index) => {
+        const shiftStart = typeof shift.startMinutes === 'number' ? shift.startMinutes : 0;
+        while (gapIndex < gaps.length && gaps[gapIndex][0] < shiftStart) {
+            pushGapBar(gaps[gapIndex]);
+            gapIndex += 1;
+        }
+
         const isAssigned = shift.caregiverId && shift.assigneeLabel && shift.assigneeLabel !== 'Open Shift';
         const color = isAssigned && caregiverColorMap ? getCaregiverColor(shift.caregiverId, caregiverColorMap) : null;
         const isFirst = index === 0;
@@ -83,7 +121,7 @@ function buildDayCell(dayCell, caregiverColorMap) {
                             {
                                 stack: [
                                     headerNode,
-                                    { text: shift.timeLabel, fontSize: 7, color: '#111111' },
+                                    { text: shift.timeLabel, fontSize: 7, color: '#111111', margin: isFirst ? [0, -3, 0, 0] : [0, 0, 0, 0] },
                                     shift.assigneeLabel ? { text: shift.assigneeLabel, fontSize: 9, bold: true, color: '#000000' } : null,
                                 ].filter(Boolean),
                                 fillColor: color,
@@ -104,13 +142,20 @@ function buildDayCell(dayCell, caregiverColorMap) {
             stack.push({
                 stack: [
                     headerNode,
-                    { text: shift.timeLabel, fontSize: 7 },
+                    { text: shift.timeLabel, fontSize: 7, margin: isFirst ? [0, -3, 0, 0] : [0, 0, 0, 0] },
                     shift.assigneeLabel ? { text: shift.assigneeLabel, fontSize: 9, color: '#555555' } : null,
                 ].filter(Boolean),
                 margin: [0, 0, 0, caregiverColorMap ? 1.5 : 3],
             });
         }
     });
+
+    while (gapIndex < gaps.length) {
+        pushGapBar(gaps[gapIndex]);
+        gapIndex += 1;
+    }
+
+
     return {
         stack,
         fillColor: dayCell.isCurrentMonthDay ? null : '#f5f5f5',
