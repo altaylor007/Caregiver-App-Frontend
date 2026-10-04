@@ -322,11 +322,6 @@ const PayrollReportView = () => {
         setIsGenerating(false);
     };
 
-    const handleHourEdit = (userId, newHours) => {
-        if (!previewData) return;
-        setPreviewData({ ...previewData, rows: previewData.rows.map(r => r.caregiver_id === userId ? { ...r, total_hours: Number(newHours) } : r) });
-    };
-
     const toggleDeclineExpense = (caregiverId, expenseId) => {
         setPreviewData(prev => ({
             ...prev,
@@ -566,6 +561,10 @@ const PayrollReportView = () => {
                             <span style={{ fontSize: '0.75rem', backgroundColor: 'var(--warning-100)', color: 'var(--warning-700)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600 }}>Unsaved Draft</span>
                         </div>
 
+                        <p className="text-xs text-neutral-500" style={{ marginBottom: '1rem' }}>
+                            Hours come from the schedule. To correct hours, edit the shift on the schedule, then click Generate Preview again.
+                        </p>
+
                         {previewData.rows.length === 0 ? (
                             <p className="text-neutral-muted text-sm text-center" style={{ padding: '1rem' }}>No shifts found for caregivers in this period.</p>
                         ) : (
@@ -583,15 +582,8 @@ const PayrollReportView = () => {
                                                 <React.Fragment key={row.caregiver_id}>
                                                 <tr style={{ borderBottom: (row.expenses && row.expenses.length) ? 'none' : '1px solid var(--neutral-200)' }}>
                                                     <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>{row.full_name}</td>
-                                                    <td style={{ padding: '0.5rem 1rem' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                                            <input type="number" step="0.25" min="0" className="form-input"
-                                                                style={{ width: '80px', padding: '0.4rem' }}
-                                                                value={row.total_hours}
-                                                                onChange={e => handleHourEdit(row.caregiver_id, e.target.value)}
-                                                            />
-                                                            <span className="text-xs text-neutral-500">hrs</span>
-                                                        </div>
+                                                    <td style={{ padding: '0.75rem 1rem' }}>
+                                                        {row.total_hours} <span className="text-xs text-neutral-500">hrs</span>
                                                     </td>
                                                 </tr>
                                                 {row.expenses && row.expenses.length > 0 && (
