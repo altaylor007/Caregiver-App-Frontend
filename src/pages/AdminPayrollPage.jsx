@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { format, subDays, addDays, parseISO, startOfDay } from 'date-fns';
 import { Calendar, FileText, CheckCircle, Mail, ChevronLeft, ChevronRight, Clock, Users } from 'lucide-react';
 import { getHolidaysForYear } from '../lib/timeUtils';
-import { buildPayrollEnabledSms, buildIndependentSms } from '../lib/payrollSms';
+import { buildPayrollEnabledSms, buildIndependentSms, DEFAULT_HOURLY_RATE } from '../lib/payrollSms';
 
 // ─────────────────────────────────────────────
 // Helper: Get the Saturday that starts the week containing `date`
@@ -225,6 +225,12 @@ const PayrollReportView = () => {
                 .eq('is_caregiver', true);
             if (uError) throw uError;
 
+            const { data: rates, error: rError } = await supabase
+                .from('caregiver_pay_rates').select('user_id, hourly_rate');
+            if (rError) throw rError;
+            const rateByUser = {};
+            (rates || []).forEach(x => { rateByUser[x.user_id] = Number(x.hourly_rate); });
+
             const { data: shifts, error: sError } = await supabase
                 .from('shifts').select('*')
                 .gte('date', startDateStr).lte('date', endDateStr)
@@ -293,6 +299,7 @@ const PayrollReportView = () => {
                     holiday_hours: Number(holidayHours.toFixed(2)),
                     total_hours: Number((regularHours + holidayHours).toFixed(2)),
                     payroll_enabled: u.payroll_enabled,
+                    hourly_rate: rateByUser[u.id] ?? DEFAULT_HOURLY_RATE,
                     expenses: buildItems(userExpenses),
                     expense_total: sumItems(userExpenses)
                 };
@@ -311,6 +318,7 @@ const PayrollReportView = () => {
                     holiday_hours: 0,
                     total_hours: 0,
                     payroll_enabled: userExpenses[0]?.user?.payroll_enabled ?? false,
+                    hourly_rate: rateByUser[uid] ?? DEFAULT_HOURLY_RATE,
                     expenses: buildItems(userExpenses),
                     expense_total: sumItems(userExpenses)
                 });
@@ -392,6 +400,7 @@ const PayrollReportView = () => {
                     holiday_hours: r.holiday_hours,
                     total_hours: r.total_hours,
                     payroll_enabled: r.payroll_enabled,
+                    hourly_rate: r.hourly_rate,
                     expense_total: Number(included.reduce((s, x) => s + Number(x.amount), 0).toFixed(2)),
                     expenses: included.map(x => ({ id: x.id, amount: Number(x.amount), description: x.description, receipt_url: x.receipt_url, no_receipt_reason: x.no_receipt_reason }))
                 };
@@ -557,6 +566,7 @@ const PayrollReportView = () => {
                                                     <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>{row.full_name}</td>
                                                     <td style={{ padding: '0.75rem 1rem' }}>
                                                         {row.total_hours} <span className="text-xs text-neutral-500">hrs</span>
+                                                        <div className="text-xs text-neutral-500">${Number(row.hourly_rate).toFixed(2)}/hr</div>
                                                     </td>
                                                 </tr>
                                                 {row.expenses && row.expenses.length > 0 && (

@@ -15,8 +15,12 @@ export const buildPayrollEnabledSms = (rows, weDate) => {
     return `WE ${weDate}\n\n${lines}`;
 };
 
-export const calculatePay = (r) =>
-    Math.round(((r.regular_hours * 30) + (r.holiday_hours * 45)) * 100) / 100;
+export const DEFAULT_HOURLY_RATE = 30;
+
+export const calculatePay = (r) => {
+    const rate = Number(r.hourly_rate) || DEFAULT_HOURLY_RATE;
+    return Math.round(((r.regular_hours * rate) + (r.holiday_hours * rate * 1.5)) * 100) / 100;
+};
 
 export const buildIndependentSms = (rows, weDate) => {
     if (!rows || rows.length === 0) return '';
