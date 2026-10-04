@@ -12,6 +12,10 @@ const AdminCaregiversPage = () => {
     const [newLastName, setNewLastName] = useState('');
     const [newPhone, setNewPhone] = useState('');
     const [newPassword, setNewPassword] = useState('');
+    const [newRate, setNewRate] = useState('');
+    const [rates, setRates] = useState({});
+    const [rateDrafts, setRateDrafts] = useState({});
+    const [savingRateId, setSavingRateId] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [sendingSMS, setSendingSMS] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
@@ -41,6 +45,13 @@ const AdminCaregiversPage = () => {
             .order('created_at', { ascending: false });
 
         if (data) setCaregivers(data);
+        const { data: rateRows, error: rateError } = await supabase
+            .from('caregiver_pay_rates').select('user_id, hourly_rate');
+        if (rateError) console.error("Error fetching pay rates:", rateError);
+        const rateMap = {};
+        (rateRows || []).forEach(x => { rateMap[x.user_id] = Number(x.hourly_rate); });
+        setRates(rateMap);
+        setRateDrafts({});
         if (error) console.error("Error fetching caregivers:", error);
 
         setLoading(false);
@@ -62,6 +73,30 @@ const AdminCaregiversPage = () => {
     const generateMessage = (email, password) => {
         const authUrl = `${window.location.origin}/auth`;
         return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nAn administrator has created an account for you. Your initial credentials are:\nEmail: ${email}\nTemporary Password: ${password}\n\nPlease click the secure link below to log in. You will be prompted to set your own password and provide your phone number.\n\nOnce logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nLogin here: ${authUrl}\n\nThank you!`;
+    };
+
+    const savePayRate = async (userId, rateValue) => {
+        const { data: { user: me } } = await supabase.auth.getUser();
+        return supabase.from('caregiver_pay_rates').upsert(
+            { user_id: userId, hourly_rate: rateValue, updated_at: new Date().toISOString(), updated_by: me?.id ?? null },
+            { onConflict: 'user_id' }
+        );
+    };
+
+    const handleSaveRate = async (userId) => {
+        const value = Number(rateDrafts[userId]);
+        if (!(value > 0)) {
+            alert('Please enter an hourly rate greater than $0.');
+            return;
+        }
+        setSavingRateId(userId);
+        const { error } = await savePayRate(userId, value);
+        setSavingRateId(null);
+        if (error) {
+            alert('Error saving hourly rate: ' + error.message);
+            return;
+        }
+        fetchCaregivers();
     };
 
     const handleCreateUser = async (e) => {
@@ -89,6 +124,12 @@ const AdminCaregiversPage = () => {
             return;
         }
 
+        const rateValue = Number(newRate);
+        if (!newRate || !(rateValue > 0)) {
+            setErrorMsg("Please provide an hourly rate greater than $0.");
+            return;
+        }
+
         const passwordToUse = newPassword || 'Agnes2026'; // Default if empty
 
         setIsSubmitting(true);
@@ -107,6 +148,15 @@ const AdminCaregiversPage = () => {
             if (data?.error) throw new Error(data.error);
             if (invokeError) throw invokeError;
 
+            let rateWarning = '';
+            const newUserId = data?.user?.id;
+            if (newUserId) {
+                const { error: rateSaveError } = await savePayRate(newUserId, rateValue);
+                if (rateSaveError) rateWarning = `Account created, but the hourly rate could not be saved (${rateSaveError.message}). Please set it from the team list below. Until then payroll uses $30/hr.`;
+            } else {
+                rateWarning = 'Account created, but the hourly rate could not be saved. Please set it from the team list below. Until then payroll uses $30/hr.';
+            }
+
             setSuccessMsg(`Success! Caregiver created.`);
 
             if (isEmailValid || isPhoneProvided) {
@@ -121,11 +171,13 @@ const AdminCaregiversPage = () => {
                 setSuccessMsg(`Success! Manual profile created. You can invite them later from the team list.`);
             }
 
+            if (rateWarning) setErrorMsg(rateWarning);
             setNewEmail('');
             setNewFirstName('');
             setNewLastName('');
             setNewPhone('');
             setNewPassword('');
+            setNewRate('');
             fetchCaregivers();
 
         } catch (error) {
@@ -487,6 +539,19 @@ const AdminCaregiversPage = () => {
                         </div>
                     </div>
                     <div className="form-group" style={{ marginBottom: '1rem' }}>
+                        <label className="form-label">Hourly Rate ($) <span style={{ color: 'red' }}>*</span></label>
+                        <input
+                            type="number"
+                            required
+                            min="0.01"
+                            step="0.01"
+                            className="form-input"
+                            placeholder="e.g. 30.00"
+                            value={newRate}
+                            onChange={(e) => setNewRate(e.target.value)}
+                        />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
                         <label className="form-label">Temporary Password</label>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <input
@@ -808,6 +873,31 @@ const AdminCaregiversPage = () => {
                                                 transition: 'left 0.2s',
                                                 boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                                             }} />
+                                        </button>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--neutral-50)', borderRadius: 'var(--radius-md)', flex: 1 }}>
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--neutral-600)', display: 'block' }}>Hourly Rate</span>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--neutral-400)' }}>{rates[cg.id] ? `$${rates[cg.id].toFixed(2)}/hr` : 'Not set (payroll uses $30)'}</span>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            min="0.01"
+                                            step="0.01"
+                                            className="form-input"
+                                            placeholder="0.00"
+                                            style={{ width: '80px', padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+                                            value={rateDrafts[cg.id] ?? ''}
+                                            onChange={(e) => setRateDrafts(prev => ({ ...prev, [cg.id]: e.target.value }))}
+                                        />
+                                        <button
+                                            onClick={() => handleSaveRate(cg.id)}
+                                            disabled={savingRateId === cg.id}
+                                            className="btn"
+                                            style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', backgroundColor: 'var(--primary-50)', color: 'var(--primary-700)', border: '1px solid var(--primary-200)' }}
+                                        >
+                                            {savingRateId === cg.id ? 'Saving...' : 'Save'}
                                         </button>
                                     </div>
 
