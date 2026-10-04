@@ -5,6 +5,7 @@ import { format, isAfter, startOfDay } from 'date-fns';
 import { TIMEZONE, getTodayInCentral, createShiftIso, formatShift } from '../lib/timeUtils';
 import { useNavigate } from 'react-router-dom';
 import { CalendarCheck, ChevronRight } from 'lucide-react';
+import MySickTimeCard from '../components/MySickTimeCard';
 
 const DashboardPage = () => {
     const { profile, user } = useAuth();
@@ -570,6 +571,8 @@ const DashboardPage = () => {
                     <p className="text-sm text-neutral-muted" style={{ marginTop: '1rem' }}>You have no upcoming shifts scheduled right now.</p>
                 )}
             </div>
+
+            <MySickTimeCard />
 
             {pendingTrades.length > 0 && (
                 <div className="card" style={{ marginTop: '1rem' }}>

@@ -7,10 +7,18 @@ export const buildPayrollEnabledSms = (rows, weDate) => {
         const firstName = r.full_name.split(' ')[0];
         const reimb = sumIncludedExpenses(r);
         const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
-        if (r.holiday_hours === 0) {
+        const sick = Number(r.sick_hours) || 0;
+        const holiday = Number(r.holiday_hours) || 0;
+        if (holiday <= 0 && sick <= 0) {
             return `${firstName}\n${r.total_hours} Hours${expLine}`;
         }
-        return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs${expLine}`;
+        const total = sick > 0 ? Number((Number(r.total_hours) + sick).toFixed(2)) : r.total_hours;
+        const parts = [];
+        if (holiday > 0) parts.push(`${r.holiday_hours} holiday hrs`);
+        if (sick > 0) parts.push(`${r.sick_hours} sick hrs`);
+        parts.push(`${r.regular_hours} regular hrs`);
+        parts.push(`${total} total hrs`);
+        return `${firstName}\n${parts.join(' | ')}${expLine}`;
     }).join('\n\n');
     return `WE ${weDate}\n\n${lines}`;
 };
