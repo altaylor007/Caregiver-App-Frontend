@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { format, subDays, addDays, parseISO, startOfDay } from 'date-fns';
 import { Calendar, FileText, CheckCircle, Mail, ChevronLeft, ChevronRight, Clock, Users } from 'lucide-react';
 import { getHolidaysForYear } from '../lib/timeUtils';
+import { buildPayrollEnabledSms, buildIndependentSms } from '../lib/payrollSms';
 
 // ─────────────────────────────────────────────
 // Helper: Get the Saturday that starts the week containing `date`
@@ -420,36 +421,8 @@ const PayrollReportView = () => {
             let smsBodyEnabled = '';
             let smsBodyDisabled = '';
             
-            if (enabledRows.length > 0) {
-                const lines = enabledRows.map(r => {
-                    const firstName = r.full_name.split(' ')[0];
-                    const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
-                    const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
-                    if (r.holiday_hours === 0) {
-                        return `${firstName}\n${r.total_hours} Hours${expLine}`;
-                    }
-                    return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs${expLine}`;
-                }).join('\n\n');
-                smsBodyEnabled = `WE ${weDate}\n\n${lines}`;
-            }
-
-            if (disabledRows.length > 0) {
-                const lines = disabledRows.map(r => {
-                    const firstName = r.full_name.split(' ')[0];
-                    const fmt = n => Number.isInteger(n) ? `${n}` : n.toFixed(2);
-                    const pay = Math.round(((r.regular_hours * 30) + (r.holiday_hours * 45)) * 100) / 100;
-                    const reimb = Math.round((r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0) * 100) / 100;
-                    const hoursLine = r.holiday_hours > 0
-                        ? `${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`
-                        : `${r.total_hours} hours`;
-                    if (reimb > 0) {
-                        const total = Math.round((pay + reimb) * 100) / 100;
-                        return `${firstName}\nTotal due: $${fmt(total)}\n\n${hoursLine}\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
-                    }
-                    return `${firstName}\n\n${hoursLine}\n$${fmt(pay)}`;
-                }).join('\n\n');
-                smsBodyDisabled = `WE ${weDate}\n\n${lines}`;
-            }
+            smsBodyEnabled = buildPayrollEnabledSms(enabledRows, weDate);
+            smsBodyDisabled = buildIndependentSms(disabledRows, weDate);
 
             // Fetch Lenke Taylor's user record
             const { data: lenkeUser, error: lenkeError } = await supabase
@@ -629,20 +602,10 @@ const PayrollReportView = () => {
                                             </div>
                                             <pre style={{ fontSize: '0.8rem', backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid var(--neutral-200)', whiteSpace: 'pre-wrap', minHeight: '100px', margin: 0 }}>
                                                 {(() => {
-                                                     const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
-                                                     if (enabledRows.length === 0) return 'No caregivers in this group.';
-                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                     const lines = enabledRows.map(r => {
-                                                         const firstName = r.full_name.split(' ')[0];
-                                                         const reimb = (r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0);
-                                                         const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
-                                                         if (r.holiday_hours === 0) {
-                                                             return `${firstName}\n${r.total_hours} Hours${expLine}`;
-                                                         }
-                                                         return `${firstName}\n${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs${expLine}`;
-                                                     }).join('\n\n');
-                                                     return `WE ${weDate}\n\n${lines}`;
-                                                 })()}
+                                                    const enabledRows = previewData.rows.filter(r => r.payroll_enabled);
+                                                    if (enabledRows.length === 0) return 'No caregivers in this group.';
+                                                    return buildPayrollEnabledSms(enabledRows, format(parseISO(previewData.end_date), 'MM-dd'));
+                                                })()}
                                             </pre>
                                         </div>
                                         <div>
@@ -651,25 +614,10 @@ const PayrollReportView = () => {
                                             </div>
                                             <pre style={{ fontSize: '0.8rem', backgroundColor: 'white', padding: '0.75rem', borderRadius: '4px', border: '1px solid var(--neutral-200)', whiteSpace: 'pre-wrap', minHeight: '100px', margin: 0 }}>
                                                 {(() => {
-                                                     const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
-                                                     if (disabledRows.length === 0) return 'No caregivers in this group.';
-                                                     const weDate = format(parseISO(previewData.end_date), 'MM-dd');
-                                                     const lines = disabledRows.map(r => {
-                                                         const firstName = r.full_name.split(' ')[0];
-                                                         const fmt = n => Number.isInteger(n) ? `${n}` : n.toFixed(2);
-                                                         const pay = Math.round(((r.regular_hours * 30) + (r.holiday_hours * 45)) * 100) / 100;
-                                                         const reimb = Math.round((r.expenses || []).filter(x => !x.declined).reduce((s, x) => s + Number(x.amount), 0) * 100) / 100;
-                                                         const hoursLine = r.holiday_hours > 0
-                                                             ? `${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`
-                                                             : `${r.total_hours} hours`;
-                                                         if (reimb > 0) {
-                                                             const total = Math.round((pay + reimb) * 100) / 100;
-                                                             return `${firstName}\nTotal due: $${fmt(total)}\n\n${hoursLine}\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
-                                                         }
-                                                         return `${firstName}\n\n${hoursLine}\n$${fmt(pay)}`;
-                                                     }).join('\n\n');
-                                                     return `WE ${weDate}\n\n${lines}`;
-                                                 })()}
+                                                    const disabledRows = previewData.rows.filter(r => !r.payroll_enabled);
+                                                    if (disabledRows.length === 0) return 'No caregivers in this group.';
+                                                    return buildIndependentSms(disabledRows, format(parseISO(previewData.end_date), 'MM-dd'));
+                                                })()}
                                             </pre>
                                         </div>
                                     </div>
