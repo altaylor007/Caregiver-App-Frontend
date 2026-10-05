@@ -9,13 +9,15 @@ export const buildPayrollEnabledSms = (rows, weDate) => {
         const expLine = reimb > 0 ? `\n+ $${reimb.toFixed(2)} expenses` : '';
         const sick = Number(r.sick_hours) || 0;
         const holiday = Number(r.holiday_hours) || 0;
-        if (holiday <= 0 && sick <= 0) {
+        const admin = Number(r.admin_hours) || 0;
+        if (holiday <= 0 && sick <= 0 && admin <= 0) {
             return `${firstName}\n${r.total_hours} Hours${expLine}`;
         }
-        const total = sick > 0 ? Number((Number(r.total_hours) + sick).toFixed(2)) : r.total_hours;
+        const total = (sick > 0 || admin > 0) ? Number((Number(r.total_hours) + sick + admin).toFixed(2)) : r.total_hours;
         const parts = [];
         if (holiday > 0) parts.push(`${r.holiday_hours} holiday hrs`);
         if (sick > 0) parts.push(`${r.sick_hours} sick hrs`);
+        if (admin > 0) parts.push(`${r.admin_hours} admin hrs`);
         parts.push(`${r.regular_hours} regular hrs`);
         parts.push(`${total} total hrs`);
         return `${firstName}\n${parts.join(' | ')}${expLine}`;
@@ -27,7 +29,7 @@ export const DEFAULT_HOURLY_RATE = 30;
 
 export const calculatePay = (r) => {
     const rate = Number(r.hourly_rate) || DEFAULT_HOURLY_RATE;
-    return Math.round(((r.regular_hours * rate) + (r.holiday_hours * rate * 1.5)) * 100) / 100;
+    return Math.round(((r.regular_hours * rate) + (r.holiday_hours * rate * 1.5) + ((Number(r.admin_hours) || 0) * rate)) * 100) / 100;
 };
 
 export const buildIndependentSms = (rows, weDate) => {
@@ -37,9 +39,20 @@ export const buildIndependentSms = (rows, weDate) => {
         const firstName = r.full_name.split(' ')[0];
         const pay = calculatePay(r);
         const reimb = Math.round(sumIncludedExpenses(r) * 100) / 100;
-        const hoursLine = r.holiday_hours > 0
-            ? `${r.holiday_hours} holiday hrs | ${r.regular_hours} regular hrs | ${r.total_hours} total hrs`
-            : `${r.total_hours} hours`;
+        const admin = Number(r.admin_hours) || 0;
+        const holiday = Number(r.holiday_hours) || 0;
+        let hoursLine;
+        if (holiday <= 0 && admin <= 0) {
+            hoursLine = `${r.total_hours} hours`;
+        } else {
+            const totalWithAdmin = Number((Number(r.total_hours) + admin).toFixed(2));
+            const parts = [];
+            if (holiday > 0) parts.push(`${r.holiday_hours} holiday hrs`);
+            if (admin > 0) parts.push(`${r.admin_hours} admin hrs`);
+            parts.push(`${r.regular_hours} regular hrs`);
+            parts.push(`${totalWithAdmin} total hrs`);
+            hoursLine = parts.join(' | ');
+        }
         if (reimb > 0) {
             const total = Math.round((pay + reimb) * 100) / 100;
             return `${firstName}\nTotal due: $${fmt(total)}\n\n${hoursLine}\n$${fmt(pay)}\n\n$${fmt(reimb)} expenses`;
@@ -48,3 +61,4 @@ export const buildIndependentSms = (rows, weDate) => {
     }).join('\n\n');
     return `WE ${weDate}\n\n${lines}`;
 };
+

@@ -240,6 +240,28 @@ const PayrollReportView = () => {
                 .lte('used_on', endDateStr);
             if (skError) throw skError;
 
+            const { data: adminEntries, error: atError } = await supabase
+                .from('admin_time_entries')
+                .select('id, user_id, hours, work_date')
+                .is('voided_at', null)
+                .gte('work_date', startDateStr)
+                .lte('work_date', endDateStr);
+            if (atError) throw atError;
+
+            let allUsers = [...(users || [])];
+            const knownUserIds = new Set(allUsers.map(u => u.id));
+            const extraUserIds = [...new Set((adminEntries || []).map(x => x.user_id).filter(id => !knownUserIds.has(id)))];
+            if (extraUserIds.length > 0) {
+                const { data: extraUsers, error: euError } = await supabase
+                    .from('users')
+                    .select('id, full_name, payroll_enabled, status, deactivated_at')
+                    .in('id', extraUserIds);
+                if (euError) throw euError;
+                if (extraUsers) {
+                    allUsers = allUsers.concat(extraUsers);
+                }
+            }
+
             const { data: shifts, error: sError } = await supabase
                 .from('shifts').select('*')
                 .gte('date', startDateStr).lte('date', endDateStr)
@@ -280,7 +302,7 @@ const PayrollReportView = () => {
             const sumItems = (items) =>
                 Number(items.reduce((s, x) => s + Number(x.amount), 0).toFixed(2));
 
-            const eligibleUsers = (users || []).filter(u =>
+            const eligibleUsers = allUsers.filter(u =>
                 u.status === 'active' ||
                 (u.status === 'inactive' && u.deactivated_at && u.deactivated_at >= startDateStr)
             );
@@ -314,12 +336,13 @@ const PayrollReportView = () => {
                     sick_hours: u.payroll_enabled
                         ? Number((sickEntries || []).filter(x => x.user_id === u.id).reduce((s, x) => s + Number(x.hours), 0).toFixed(2))
                         : 0,
+                    admin_hours: Number((adminEntries || []).filter(x => x.user_id === u.id).reduce((s, x) => s + Number(x.hours), 0).toFixed(2)),
                     payroll_enabled: u.payroll_enabled,
                     hourly_rate: rateByUser[u.id] ?? DEFAULT_HOURLY_RATE,
                     expenses: buildItems(userExpenses),
                     expense_total: sumItems(userExpenses)
                 };
-            }).filter(r => r.total_hours > 0 || r.expense_total > 0 || r.sick_hours > 0);
+            }).filter(r => r.total_hours > 0 || r.expense_total > 0 || r.sick_hours > 0 || r.admin_hours > 0);
 
             // Include caregivers who submitted expenses this week but are not in the
             // active-caregiver list (e.g. now inactive), so their reimbursement isn't dropped.
@@ -416,6 +439,7 @@ const PayrollReportView = () => {
                     holiday_hours: r.holiday_hours,
                     total_hours: r.total_hours,
                     sick_hours: r.sick_hours || 0,
+                    admin_hours: r.admin_hours || 0,
                     payroll_enabled: r.payroll_enabled,
                     hourly_rate: r.hourly_rate,
                     expense_total: Number(included.reduce((s, x) => s + Number(x.amount), 0).toFixed(2)),
@@ -582,9 +606,12 @@ const PayrollReportView = () => {
                                                 <tr style={{ borderBottom: (row.expenses && row.expenses.length) ? 'none' : '1px solid var(--neutral-200)' }}>
                                                     <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>{row.full_name}</td>
                                                     <td style={{ padding: '0.75rem 1rem' }}>
-                                                        {Number((Number(row.total_hours) + Number(row.sick_hours || 0)).toFixed(2))} <span className="text-xs text-neutral-500">hrs</span>
+                                                        {Number((Number(row.total_hours) + Number(row.sick_hours || 0) + Number(row.admin_hours || 0)).toFixed(2))} <span className="text-xs text-neutral-500">hrs</span>
                                                         {Number(row.sick_hours) > 0 && (
                                                             <div className="text-xs text-neutral-500">incl. {row.sick_hours} sick hrs</div>
+                                                        )}
+                                                        {Number(row.admin_hours) > 0 && (
+                                                            <div className="text-xs text-neutral-500">incl. {row.admin_hours} admin hrs</div>
                                                         )}
                                                         <div className="text-xs text-neutral-500">${Number(row.hourly_rate).toFixed(2)}/hr</div>
                                                     </td>

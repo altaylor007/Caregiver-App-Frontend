@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Users, FileText, Calendar, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import AdminTimeCard from '../components/AdminTimeCard';
 
 const AdminDashboardPage = () => {
     const { profile } = useAuth();
@@ -46,6 +47,8 @@ const AdminDashboardPage = () => {
                     </div>
                 </Link>
             </div>
+
+            <AdminTimeCard />
 
             <div className="card">
                 <h3>Pending Items</h3>
