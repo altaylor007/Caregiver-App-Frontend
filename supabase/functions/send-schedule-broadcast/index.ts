@@ -104,7 +104,7 @@ serve(async (req) => {
     }
 
     const weekLabel = getWeekLabel(periodStart, periodEnd)
-    const ackLink = 'https://radiant-yeot-a82a87.netlify.app/'
+    const ackLink = 'https://www.agnescare.com/'
     const customMessage = (reqBody.message ?? '').trim()
     const messageBody = customMessage
       ? `${customMessage} View and acknowledge here: ${ackLink}`

@@ -5,12 +5,26 @@ import { useAuth } from '../contexts/AuthContext';
 
 const UpdatePasswordPage = () => {
     const navigate = useNavigate();
-    const { user } = useAuth(); // We need to know who is updating their password to save their phone
+    const { user, profile } = useAuth(); // We need to know who is updating their password to save their phone
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [phone, setPhone] = useState('');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
+
+    const isOnboarding = profile?.requires_password_change === true
+        && !profile?.acknowledged_responsibilities
+        && !['admin', 'manager'].includes(profile?.role);
+
+    if (profile === null) {
+        return (
+            <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backgroundColor: 'var(--primary-50)' }}>
+                <div className="card" style={{ width: '100%', maxWidth: 400, padding: '2rem', textAlign: 'center' }}>
+                    <p className="text-neutral-muted">Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -25,7 +39,7 @@ const UpdatePasswordPage = () => {
             return;
         }
 
-        if (!phone || phone.trim().length < 10) {
+        if (isOnboarding && (!phone || phone.trim().length < 10)) {
             setErrorMsg("Please enter a valid phone number including area code.");
             return;
         }
@@ -36,49 +50,71 @@ const UpdatePasswordPage = () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
             setLoading(false);
-            alert('Your session has expired. Please log in again with the temporary password you were given, then set your new password right away.');
+            alert(
+                profile.requires_password_change
+                    ? 'Your session has expired. Please log in again with the temporary password you were given, then set your new password right away.'
+                    : 'Your reset link has expired. Please request a new one from the sign-in page.'
+            );
             navigate('/auth');
             return;
         }
 
         try {
-            // Format the phone number FIRST (assuming US if no country code provided)
-            let formattedPhone = phone.trim();
-            if (!formattedPhone.startsWith('+')) {
-                const numericOnly = formattedPhone.replace(/\D/g, '');
-                if (numericOnly.length === 10) {
-                    formattedPhone = `+1${numericOnly}`;
-                } else if (numericOnly.length === 11 && numericOnly.startsWith('1')) {
-                    formattedPhone = `+${numericOnly}`;
+            if (isOnboarding) {
+                // Format the phone number FIRST (assuming US if no country code provided)
+                let formattedPhone = phone.trim();
+                if (!formattedPhone.startsWith('+')) {
+                    const numericOnly = formattedPhone.replace(/\D/g, '');
+                    if (numericOnly.length === 10) {
+                        formattedPhone = `+1${numericOnly}`;
+                    } else if (numericOnly.length === 11 && numericOnly.startsWith('1')) {
+                        formattedPhone = `+${numericOnly}`;
+                    }
                 }
-            }
 
-            // 1. Update the profile FIRST so that when auth triggers a re-render,
-            //    requires_password_change is already false (prevents redirect loop).
-            if (user?.id) {
-                const { error: dbError } = await supabase
-                    .from('users')
-                    .update({
-                        phone: formattedPhone,
-                        sms_enabled: true,
-                        requires_password_change: false
-                    })
-                    .eq('id', user.id);
+                // 1. Update the profile FIRST so that when auth triggers a re-render,
+                //    requires_password_change is already false (prevents redirect loop).
+                if (user?.id) {
+                    const { error: dbError } = await supabase
+                        .from('users')
+                        .update({
+                            phone: formattedPhone,
+                            sms_enabled: true,
+                            requires_password_change: false
+                        })
+                        .eq('id', user.id);
 
-                if (dbError) {
-                    console.error("Failed to save profile to database:", dbError);
-                    // Don't block - still try to update password
+                    if (dbError) {
+                        console.error("Failed to save profile to database:", dbError);
+                        // Don't block - still try to update password
+                    }
                 }
+
+                // 2. NOW update the auth password — this triggers an auth state change
+                //    which re-fetches the profile. By this point requires_password_change
+                //    is already false, so the ProtectedRoute guard won't redirect back here.
+                const { error: authError } = await supabase.auth.updateUser({ password });
+                if (authError) throw authError;
+
+                alert('Account setup complete! Welcome to the team.');
+                window.location.replace('/documents?onboarding=true');
+            } else {
+                if (profile.requires_password_change === true && user?.id) {
+                    const { error: dbError } = await supabase
+                        .from('users')
+                        .update({ requires_password_change: false })
+                        .eq('id', user.id);
+
+                    if (dbError) {
+                        console.error("Failed to save profile to database:", dbError);
+                    }
+                }
+
+                const { error: authError } = await supabase.auth.updateUser({ password });
+                if (authError) throw authError;
+
+                window.location.replace('/');
             }
-
-            // 2. NOW update the auth password — this triggers an auth state change
-            //    which re-fetches the profile. By this point requires_password_change
-            //    is already false, so the ProtectedRoute guard won't redirect back here.
-            const { error: authError } = await supabase.auth.updateUser({ password });
-            if (authError) throw authError;
-
-            alert('Account setup complete! Welcome to the team.');
-            navigate('/documents?onboarding=true');
         } catch (error) {
             setErrorMsg(error.message);
         } finally {
@@ -91,8 +127,17 @@ const UpdatePasswordPage = () => {
             <div className="card" style={{ width: '100%', maxWidth: 400, padding: '2rem' }}>
 
                 <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <h1 className="text-primary" style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Set Your Password</h1>
-                    <p className="text-neutral-muted">Welcome to Agnes Care Team (ACT)! Please provide a phone number to receive schedule updates and set a secure password.</p>
+                    {isOnboarding ? (
+                        <>
+                            <h1 className="text-primary" style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Set Your Password</h1>
+                            <p className="text-neutral-muted">Welcome to Agnes Care Team (ACT)! Please provide a phone number to receive schedule updates and set a secure password.</p>
+                        </>
+                    ) : (
+                        <>
+                            <h1 className="text-primary" style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Set a new password</h1>
+                            <p className="text-neutral-muted">Choose a new password for your account.</p>
+                        </>
+                    )}
                 </div>
 
                 {errorMsg && (
@@ -101,52 +146,86 @@ const UpdatePasswordPage = () => {
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit}>
-                    <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                        <label className="form-label">Phone Number <span style={{ color: 'red' }}>*</span></label>
-                        <input
-                            type="tel"
-                            required
-                            className="form-input"
-                            placeholder="e.g. (555) 123-4567"
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                        />
-                        <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-sm)' }}>
-                            <p className="text-xs text-neutral-700" style={{ lineHeight: '1.4', margin: 0 }}>
-                                By providing your phone number and completing setup, you agree to receive SMS account update and schedule notifications from Agnes Care Team. Msg & data rates may apply. Msg frequency varies. Reply STOP to cancel or HELP for help. See our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Privacy Policy</a>.
-                            </p>
+                {isOnboarding ? (
+                    <form onSubmit={handleSubmit}>
+                        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                            <label className="form-label">Phone Number <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="tel"
+                                required
+                                className="form-input"
+                                placeholder="e.g. (555) 123-4567"
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
+                            />
+                            <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'var(--primary-50)', borderRadius: 'var(--radius-sm)' }}>
+                                <p className="text-xs text-neutral-700" style={{ lineHeight: '1.4', margin: 0 }}>
+                                    By providing your phone number and completing setup, you agree to receive SMS account update and schedule notifications from Agnes Care Team. Msg & data rates may apply. Msg frequency varies. Reply STOP to cancel or HELP for help. See our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-600)' }}>Privacy Policy</a>.
+                                </p>
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="form-group">
-                        <label className="form-label">New Password <span style={{ color: 'red' }}>*</span></label>
-                        <input
-                            type="password"
-                            required
-                            className="form-input"
-                            placeholder="••••••••"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                    </div>
+                        <div className="form-group">
+                            <label className="form-label">New Password <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="password"
+                                required
+                                className="form-input"
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                        </div>
 
-                    <div className="form-group">
-                        <label className="form-label">Confirm New Password <span style={{ color: 'red' }}>*</span></label>
-                        <input
-                            type="password"
-                            required
-                            className="form-input"
-                            placeholder="••••••••"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                        />
-                    </div>
+                        <div className="form-group">
+                            <label className="form-label">Confirm New Password <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="password"
+                                required
+                                className="form-input"
+                                placeholder="••••••••"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                            />
+                        </div>
 
-                    <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
-                        {loading ? 'Saving...' : 'Complete Setup & Continue'}
-                    </button>
-                </form>
+                        <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
+                            {loading ? 'Saving...' : 'Complete Setup & Continue'}
+                        </button>
+                    </form>
+                ) : (
+                    <form onSubmit={handleSubmit}>
+                        <div className="form-group">
+                            <label className="form-label">New Password <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="password"
+                                autoComplete="new-password"
+                                required
+                                className="form-input"
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="form-label">Confirm New Password <span style={{ color: 'red' }}>*</span></label>
+                            <input
+                                type="password"
+                                autoComplete="new-password"
+                                required
+                                className="form-input"
+                                placeholder="••••••••"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                            />
+                        </div>
+
+                        <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
+                            {loading ? 'Saving...' : 'Save new password'}
+                        </button>
+                    </form>
+                )}
             </div>
         </div>
     );

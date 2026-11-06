@@ -72,7 +72,7 @@ const AdminCaregiversPage = () => {
 
     const generateMessage = (email, password) => {
         const authUrl = `${window.location.origin}/auth`;
-        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nAn administrator has created an account for you. Your initial credentials are:\nEmail: ${email}\nTemporary Password: ${password}\n\nPlease click the secure link below to log in. You will be prompted to set your own password and provide your phone number.\n\nOnce logged in, please navigate to the Responsibilities section to review and acknowledge our operating protocols.\n\nLogin here: ${authUrl}\n\nThank you!`;
+        return `Hello,\n\nYou have been invited to join the caregiver scheduling team on Agnes Care Team (ACT).\n\nAn administrator has created an account for you. Your initial credentials are:\nEmail: ${email}\nTemporary Password: ${password}\n\nPlease use the link below to log in. You will be asked to set your own password and add your phone number, and then to review and acknowledge our team documents.\n\nLogin here: ${authUrl}\n\nThank you!`;
     };
 
     const savePayRate = async (userId, rateValue) => {
